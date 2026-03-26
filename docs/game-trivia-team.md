@@ -83,7 +83,7 @@ Do **not** duplicate the four-answer question layout. **Extend** (or add first) 
 - [ ] MCQ UI and majority explainer **shared** with identify-quote where applicable (no second copy-paste screen).
 - [ ] 10 questions, 4 options, correct answers graded via **majority within team**.
 - [ ] **50** points per correct question per player on qualifying teams.
-- [ ] Instructions UI matches trivia_rules Stitch reference where practical.
+- [ ] Instructions / rules copy matches the trivia product spec and shared lobby patterns.
 - [ ] Offline-friendly: localStorage records choices; resync when online.
 - [ ] Majority resolver and tie policy covered by tests **written before** implementation stabilizes.
 

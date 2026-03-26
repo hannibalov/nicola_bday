@@ -81,7 +81,9 @@ describe("PartyProtocolScreen", () => {
       "href",
       expect.stringContaining("maps.app.goo.gl")
     );
-    expect(screen.getByText(/first things first/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/next · logistics & how we play/i)
+    ).toBeInTheDocument();
     jest.useRealTimers();
   });
 
@@ -94,7 +96,7 @@ describe("PartyProtocolScreen", () => {
         onCompleted={jest.fn()}
       />
     );
-    expect(screen.getByText(/you’re checked in/i)).toBeInTheDocument();
+    expect(screen.getByText(/quick recap below/i)).toBeInTheDocument();
     jest.useRealTimers();
   });
 });

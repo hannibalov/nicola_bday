@@ -33,7 +33,7 @@ Reuse the **same page/component** with different **copy** and **optional team ro
 
 - No dedicated lobby; `WaitingLobby` is only “Waiting for host to start…” during server `lobby` phase.
 - `CountdownScreen` shows teammates during **team** countdown, not a full lobby with instructions + roster.
-- **Gap:** Stitch lobby layout not implemented; admin cannot distinguish “lobby for game 1” vs “in game” without extending session model.
+- **Gap:** Brief may pre-date `LobbyScreen` + `GuestStep`; confirm trivia vs bingo lobby steps and admin “Start next” match this doc.
 
 ---
 
@@ -64,8 +64,8 @@ Today `getPublicState` only exposes the **current player’s** team and teammate
 - [ ] **`yarn lint`** passes.
 - [ ] One `LobbyScreen` (name TBD) with props: `variant: 'trivia' | 'music_bingo'`, `teams?`, `onReady` noop (host drives).
 - [ ] Trivia variant: list **every** team and member nicknames.
-- [ ] Music bingo variant: individual instructions + reference to `music_bingo_rules` copy/design.
-- [ ] Styled per Stitch lobby reference (hero, cards, CTA area).
+- [ ] Music bingo variant: individual instructions + bingo rules copy from the product spec.
+- [ ] Mobile-first lobby layout (hero, instruction cards, clear primary area).
 - [ ] When admin leaves lobby (starts countdown/game), clients leave this screen without manual refresh.
 
 ---

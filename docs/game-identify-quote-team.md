@@ -75,7 +75,7 @@ Use the **same** `MultipleChoicePanel`, `TeamMajorityExplainer`, `QuestionProgre
 - [ ] 15 quotes loaded from JSON; 4 options; grading by team majority.
 - [ ] New team assignment independent from trivia teams.
 - [ ] 50 points per correct quote per player on successful teams.
-- [ ] UI aligned with `identify_this_quote` Stitch reference.
+- [ ] UI consistent with shared guest chrome and MCQ patterns (e.g. `MultipleChoicePanel`).
 - [ ] Reshuffle + majority logic covered by **TDD** (tests precede or accompany implementation, not trailing only).
 
 ---

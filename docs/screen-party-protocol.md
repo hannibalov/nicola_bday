@@ -24,7 +24,7 @@ Show party rules, theme, or “how the evening works” in a **dedicated** full-
 ## Current implementation
 
 - `src/components/InstructionsScreen.tsx` shows **generic** instructions and uses **`sessionStorage`** key `nicola-games-instructions-seen`.
-- **Gap:** Not the Stitch party protocol design; not tied to check-in order as a distinct **server step**; lost on new session tab if sessionStorage-only.
+- **Gap:** This brief may pre-date `PartyProtocolScreen`; confirm it matches the current `guestStep` + localStorage gate in code.
 
 ---
 
@@ -52,7 +52,7 @@ For poor connectivity, **Option A + localStorage** is simplest; sync with server
 
 - [ ] **Tests first** for gating and persistence, then UI implementation.
 - [ ] **`yarn lint`** passes.
-- [ ] Full-screen UI aligned with Stitch `party_protocol_theme` reference.
+- [ ] Full-screen UI for rules / theme (mobile-first, scannable sections).
 - [ ] Only reachable after successful registration (`playerId` present).
 - [ ] “Continue” stores completion in **localStorage** so refresh skips re-read unless you intentionally want “always show.”
 - [ ] After continue: land on “waiting for host / lobby locked” state until admin opens first lobby (see `screen-lobby.md`).

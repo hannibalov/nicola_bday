@@ -79,49 +79,62 @@ export default function PartyProtocolScreen({
       />
 
       <header className="relative z-10 mb-10">
-        <p
-          className="mb-3 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
-          style={{ fontFamily: fontHeadline }}
+        <section
+          className="relative overflow-hidden rounded-2xl border border-[#322e25]/10 bg-gradient-to-br from-white/90 to-[#f8f0e0]/90 px-6 py-8 shadow-sm sm:px-8 sm:py-10"
+          aria-labelledby="party-welcome-heading"
         >
-          Welcome
-        </p>
-        <h1
-          className="text-4xl font-black uppercase italic leading-[0.95] tracking-tighter text-[#322e25] sm:text-5xl"
-          style={{ fontFamily: fontHeadline }}
-        >
-          Welcome to Nicola&apos;s
-          <br />
-          <span className="text-[#ff7943]">bash</span>
-        </h1>
-        <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[#605b50]">
-          This is the party app for Nicola&apos;s birthday — trivia, music bingo,
-          and team games on your phone, in sync when the host advances the night.
-          Everything below is the rundown: where we meet, the countdown, and how
-          to play along.
-        </p>
-
-        <div className="mt-10 border-t border-[#322e25]/15 pt-10">
           <p
-            className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
+            className="mb-4 inline-block rounded-full bg-[#b50552]/12 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.25em] text-[#b50552]"
             style={{ fontFamily: fontHeadline }}
           >
-            {preCheckIn ? "First things first" : "You’re checked in"}
+            Nicola&apos;s bash · Saturday 11 April · Barcelona
           </p>
-          <h2
-            className="text-5xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-6xl"
+          <h1
+            id="party-welcome-heading"
+            className="text-4xl font-black uppercase italic leading-[0.95] tracking-tighter text-[#322e25] sm:text-5xl"
             style={{ fontFamily: fontHeadline }}
           >
-            Party
+            Welcome to Nicola&apos;s
             <br />
-            <span className="text-[#ff7943]">protocol</span>
-          </h2>
-          <div className="mt-6 flex items-center gap-4">
-            <div className="h-0.5 w-12 bg-[#b50552]" aria-hidden />
-            <p className="text-xs font-bold uppercase tracking-widest text-[#605b50]">
-              How tonight works
+            <span className="text-[#ff7943]">birthday bash</span>
+          </h1>
+          <p className="mt-4 text-lg font-bold leading-snug text-[#322e25] sm:text-xl">
+            {preCheckIn
+              ? "This site is your companion for the party."
+              : "You're checked in — quick recap below."}
+          </p>
+          {preCheckIn ? (
+            <>
+              <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[#605b50]">
+                You&apos;re on the{" "}
+                <strong className="font-semibold text-[#322e25]">
+                  official games page
+                </strong>{" "}
+                for Nicola&apos;s celebration: team trivia, music bingo, live
+                scores, and prompts that stay in sync when the host moves the
+                night forward.
+              </p>
+              <p className="mt-4 max-w-xl text-sm font-medium leading-relaxed text-[#605b50]">
+                Nothing to install — keep your browser tab open. Scroll on for
+                where we&apos;re meeting, the countdown to doors, then the
+                party protocol (how we play together).
+              </p>
+            </>
+          ) : (
+            <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[#605b50]">
+              Venue, countdown, and the party protocol are below. After you tap
+              continue you&apos;ll wait in the lobby until the host opens game
+              one.
             </p>
-          </div>
-        </div>
+          )}
+        </section>
+
+        <p
+          className="mt-8 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
+          style={{ fontFamily: fontHeadline }}
+        >
+          Next · logistics &amp; how we play
+        </p>
       </header>
 
       <div className="relative z-10 mb-8 grid grid-cols-3 gap-2 rounded-2xl bg-[#322e25] px-4 py-5 text-center text-[#fef6e7]">
@@ -210,7 +223,30 @@ export default function PartyProtocolScreen({
             </a>
           </div>
         </section>
+      </div>
 
+      <div className="relative z-10 mt-2 mb-6 space-y-3">
+        <div className="flex items-center gap-4">
+          <div className="h-0.5 w-12 bg-[#b50552]" aria-hidden />
+          <p className="text-xs font-bold uppercase tracking-widest text-[#605b50]">
+            How tonight works
+          </p>
+        </div>
+        <h2
+          className="text-4xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-5xl"
+          style={{ fontFamily: fontHeadline }}
+        >
+          Party
+          <br />
+          <span className="text-[#ff7943]">protocol</span>
+        </h2>
+        <p className="max-w-xl text-sm font-medium text-[#605b50]">
+          Ground rules and tips — after this block you&apos;ll be ready to check
+          in or join the waiting room.
+        </p>
+      </div>
+
+      <div className="relative z-10 grid grid-cols-1 gap-5">
         <section className="flex flex-col justify-between rounded-xl bg-[#f8f0e0] p-7">
           <div>
             <span className="mb-5 block text-4xl text-[#a33700]" aria-hidden>

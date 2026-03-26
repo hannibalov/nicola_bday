@@ -21,7 +21,7 @@ Show standings **after** a game completes, before the next lobby or the final wr
 - Rankings must reflect **actual** scoring rules for the preceding game (not mock random data — see `src/lib/store.ts` `recordMockScores` to replace).
 - **Team games (trivia, quotes):** Leaderboard can show **teams** or **individuals** — product decision; spec mentions leaderboard after each game; be consistent with “teams copied to each member” (everyone on the team has the same points from that round).
 - **Music bingo:** Individual points; show players.
-- Visuals: align with Stitch leaderboard HTML (podium, list, accents).
+- Visuals: clear ranking (podium or list), readable names/scores, mobile-friendly accents.
 
 ---
 
@@ -55,7 +55,7 @@ Show standings **after** a game completes, before the next lobby or the final wr
 
 - [ ] **Tests first** for sort order and score display rules.
 - [ ] **`yarn lint`** passes.
-- [ ] Pixel-rough alignment with Stitch leaderboard design.
+- [ ] Cohesive leaderboard UI consistent with `GameLeaderboard` / `FinalLeaderboard`.
 - [ ] Correct ordering (descending score); stable tie-break (alphabetical or join order — document).
 - [ ] Works for both `team` and `individual` preceding games.
 - [ ] Accessible on mobile (large touch targets, readable contrast).
