@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import {
   TRIVIA_QUESTIONS,
@@ -10,9 +10,13 @@ import {
   getTriviaAnswersLocal,
   setTriviaAnswersLocal,
 } from "@/lib/clientStorage";
+import type { TeamMcqPublicSync } from "@/types";
 import QuestionProgress from "@/components/game/QuestionProgress";
 import TeamMajorityExplainer from "@/components/game/TeamMajorityExplainer";
 import MultipleChoicePanel from "@/components/game/MultipleChoicePanel";
+import McqRoundCountdownBar from "@/components/game/McqRoundCountdownBar";
+import { useTeamMcqRoundPhase } from "@/components/game/useTeamMcqRoundPhase";
+import { useTeamMcqBackgroundVotes } from "@/components/game/useTeamMcqBackgroundVotes";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -32,33 +36,31 @@ function topicLabel(topic: TriviaQuestion["topic"]): string {
   return "Barcelona";
 }
 
-async function postVote(
-  questionId: string,
-  optionIndex: number
-): Promise<boolean> {
-  const res = await fetch("/api/game/trivia/vote", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ questionId, optionIndex }),
-  });
-  return res.ok;
-}
-
 export type TriviaGameScreenProps = {
+  teamMcqSync: TeamMcqPublicSync | null;
   serverMyVotes: Record<string, number>;
-  onVoteSynced?: () => void;
 };
 
 export default function TriviaGameScreen({
+  teamMcqSync,
   serverMyVotes,
-  onVoteSynced,
 }: TriviaGameScreenProps) {
   const fontBody = "var(--font-trivia-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-trivia-headline), ui-sans-serif, system-ui";
   const total = TRIVIA_QUESTIONS.length;
-  const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+
+  const postVote = useCallback(async (questionId: string, optionIndex: number) => {
+    const res = await fetch("/api/game/trivia/vote", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId, optionIndex }),
+    });
+    return res.ok;
+  }, []);
+
+  const enqueueVote = useTeamMcqBackgroundVotes(postVote);
 
   useEffect(() => {
     const local = getTriviaAnswersLocal() ?? {};
@@ -67,47 +69,41 @@ export default function TriviaGameScreen({
     });
   }, [serverMyVotes]);
 
-  useEffect(() => {
-    let alive = true;
-    const local = getTriviaAnswersLocal() ?? {};
-    (async () => {
-      for (const [qid, idx] of Object.entries(local)) {
-        if (!alive) return;
-        if (serverMyVotes[qid] !== undefined) continue;
-        const ok = await postVote(qid, Number(idx));
-        if (ok && alive) onVoteSynced?.();
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [serverMyVotes, onVoteSynced]);
+  const q = useMemo(() => {
+    if (!teamMcqSync) return null;
+    return TRIVIA_QUESTIONS[teamMcqSync.questionIndex] ?? null;
+  }, [teamMcqSync]);
 
-  const q = TRIVIA_QUESTIONS[index];
-  const selected = q ? (answers[q.id] ?? null) : null;
+  const { phase, secondsLeft } = useTeamMcqRoundPhase(teamMcqSync);
+
+  const canAnswer = phase === "answering";
+  const showReveal =
+    phase === "reveal" || phase === "syncing" || phase === "awaiting_host";
 
   const handleSelect = useCallback(
-    async (optionIndex: number) => {
-      const current = TRIVIA_QUESTIONS[index];
-      if (!current) return;
+    (optionIndex: number) => {
+      if (!q || !canAnswer) return;
       setAnswers((prev) => {
-        const next = { ...prev, [current.id]: optionIndex };
+        const next = { ...prev, [q.id]: optionIndex };
         setTriviaAnswersLocal(next);
         return next;
       });
-      const ok = await postVote(current.id, optionIndex);
-      if (ok) onVoteSynced?.();
+      enqueueVote(q.id, optionIndex);
     },
-    [index, onVoteSynced]
+    [q, canAnswer, enqueueVote]
   );
 
-  if (!q) {
+  const selected = q ? (answers[q.id] ?? null) : null;
+  const revealCorrectIndex =
+    showReveal && q ? q.correctIndex : null;
+
+  if (!teamMcqSync || !q) {
     return null;
   }
 
   return (
     <div
-      className={`${headline.variable} ${body.variable} relative -mx-4 -my-6 min-h-[calc(100dvh-3rem)] overflow-x-hidden bg-[#fef6e7] px-4 pb-32 pt-4 text-[#322e25]`}
+      className={`${headline.variable} ${body.variable} relative -mx-4 -my-6 min-h-[calc(100dvh-3rem)] overflow-x-hidden bg-[#fef6e7] px-4 pb-28 pt-4 text-[#322e25]`}
       style={{ fontFamily: fontBody }}
     >
       <div
@@ -141,9 +137,10 @@ export default function TriviaGameScreen({
           <span className="font-bold text-[#a33700]">50 pts</span> per correct
           team answer when the majority picks right.
         </p>
-        <div className="mt-5">
+        <div className="mt-5 space-y-3">
+          <McqRoundCountdownBar phase={phase} secondsLeft={secondsLeft} />
           <QuestionProgress
-            current={index + 1}
+            current={teamMcqSync.questionIndex + 1}
             total={total}
             label="Question"
             variant="bar"
@@ -161,39 +158,11 @@ export default function TriviaGameScreen({
           topicLabel={topicLabel(q.topic)}
           options={q.options}
           selectedIndex={selected}
-          onSelect={(i) => void handleSelect(i)}
+          onSelect={(i) => handleSelect(i)}
+          disabled={!canAnswer}
+          revealCorrectIndex={revealCorrectIndex}
         />
       </section>
-
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-20 flex gap-3 border-t border-[#e5dcc9] bg-[#fef6e7]/95 px-4 py-4 backdrop-blur-md"
-        aria-label="Question navigation"
-      >
-        <button
-          type="button"
-          disabled={index <= 0}
-          data-test-id="trivia-back"
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          className="flex-1 rounded-full border-2 border-[#b3ac9f] bg-white py-4 text-center text-sm font-bold text-[#322e25] disabled:opacity-40"
-        >
-          Back
-        </button>
-        {index < total - 1 ? (
-          <button
-            type="button"
-            data-test-id="trivia-next"
-            onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}
-            className="flex-1 rounded-full border-2 border-[#a33700] bg-[#ff7943]/20 py-4 text-center text-sm font-black uppercase tracking-wide text-[#a33700]"
-          >
-            Next question
-          </button>
-        ) : (
-          <div className="flex flex-[2] items-center justify-center rounded-full bg-[#f8f0e0] px-4 text-center text-xs font-bold text-[#605b50]">
-            You’re on the last question. The host will end the round when it’s
-            time.
-          </div>
-        )}
-      </nav>
     </div>
   );
 }

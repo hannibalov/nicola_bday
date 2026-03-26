@@ -100,6 +100,7 @@ describe("PlayView", () => {
               myBingoScore: 0,
               myTriviaVotes: {},
               myQuoteVotes: {},
+              teamMcqSync: null,
             }),
         } as Response);
       }

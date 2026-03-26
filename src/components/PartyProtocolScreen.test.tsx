@@ -82,7 +82,7 @@ describe("PartyProtocolScreen", () => {
       expect.stringContaining("maps.app.goo.gl")
     );
     expect(
-      screen.getByText(/next · logistics & how we play/i)
+      screen.getByRole("heading", { level: 2, name: /venue[\s\n]*&[\s\n]*logistics/i })
     ).toBeInTheDocument();
     jest.useRealTimers();
   });

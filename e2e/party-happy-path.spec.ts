@@ -42,7 +42,7 @@ test.describe("happy path — host drives full party", () => {
       const correct = TRIVIA_QUESTIONS[i]!.correctIndex;
       await guestPage.getByTestId(`mcq-option-${correct}`).click();
       if (i < TRIVIA_QUESTIONS.length - 1) {
-        await guestPage.getByTestId("trivia-next").click();
+        await guestPage.waitForTimeout(900);
       }
     }
 
@@ -84,7 +84,7 @@ test.describe("happy path — host drives full party", () => {
       const correct = quotes[i]!.correctIndex;
       await guestPage.getByTestId(`mcq-option-${correct}`).click();
       if (i < quotes.length - 1) {
-        await guestPage.getByTestId("quote-next").click();
+        await guestPage.waitForTimeout(900);
       }
     }
 

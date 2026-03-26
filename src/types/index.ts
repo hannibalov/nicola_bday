@@ -68,12 +68,25 @@ export interface SessionState {
   triviaVotesByPlayer: Record<string, Record<string, number>>;
   /** During “Who said it”: `playerId` → `quoteId` → chosen option index (0–3). */
   quoteVotesByPlayer: Record<string, Record<string, number>>;
+  /** Start time of the **current** MCQ round (trivia or quotes); advances by fixed cycle. */
+  teamMcqRoundStartedAtEpochMs: number | null;
+  /** 0-based index into trivia / quote list for the active round. */
+  teamMcqRoundIndex: number;
 }
 
 /** Full team roster for trivia lobby (nicknames only; safe for all guests). */
 export interface LobbyTeamRoster {
   name: string;
   nicknames: string[];
+}
+
+/** Server anchor for synchronized team MCQ (trivia + “who said it”). */
+export interface TeamMcqPublicSync {
+  questionIndex: number;
+  roundStartedAtEpochMs: number;
+  totalQuestions: number;
+  answerMs: number;
+  revealMs: number;
 }
 
 export interface PublicState {
@@ -108,6 +121,8 @@ export interface PublicState {
   myTriviaVotes: Record<string, number>;
   /** Server-backed quote selections for this player during `game_quotes`. */
   myQuoteVotes: Record<string, number>;
+  /** Set during `game_trivia` and `game_quotes`; clients align countdown + reveal. */
+  teamMcqSync: TeamMcqPublicSync | null;
 }
 
 /** Slot 0 = trivia, 1 = bingo, 2 = quotes; null if not in an active game context. */

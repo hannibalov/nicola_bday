@@ -6,6 +6,8 @@ type Props = {
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   disabled?: boolean;
+  /** When set (reveal phase), this option is styled as the correct answer. */
+  revealCorrectIndex?: number | null;
 };
 
 export default function MultipleChoicePanel({
@@ -15,6 +17,7 @@ export default function MultipleChoicePanel({
   selectedIndex,
   onSelect,
   disabled = false,
+  revealCorrectIndex = null,
 }: Props) {
   return (
     <div className="flex flex-col gap-4">
@@ -31,6 +34,9 @@ export default function MultipleChoicePanel({
       <div className="grid gap-3">
         {options.map((label, i) => {
           const selected = selectedIndex === i;
+          const isRevealCorrect = revealCorrectIndex === i;
+          const greyUnused =
+            disabled && revealCorrectIndex == null && !isRevealCorrect;
           return (
             <button
               key={i}
@@ -40,10 +46,15 @@ export default function MultipleChoicePanel({
               onClick={() => onSelect(i)}
               className={[
                 "min-h-[3.25rem] w-full rounded-full border-2 px-5 py-3 text-left text-base font-medium transition-colors",
-                selected
-                  ? "border-[#a33700] bg-[#a33700] text-[#ffefeb] shadow-lg shadow-[#a33700]/25"
-                  : "border-[#e5dcc9] bg-[#f8f0e0] text-[#322e25] hover:border-[#a33700]/50",
-                disabled ? "opacity-50" : "",
+                isRevealCorrect
+                  ? "border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
+                  : selected
+                    ? "border-[#a33700] bg-[#a33700] text-[#ffefeb] shadow-lg shadow-[#a33700]/25"
+                    : "border-[#e5dcc9] bg-[#f8f0e0] text-[#322e25] hover:border-[#a33700]/50",
+                revealCorrectIndex != null && !isRevealCorrect
+                  ? "opacity-55"
+                  : "",
+                greyUnused ? "opacity-50" : "",
               ].join(" ")}
             >
               <span className="mr-2 font-black text-[#ff7943]">

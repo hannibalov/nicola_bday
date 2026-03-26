@@ -1,22 +1,16 @@
 "use client";
 
-import {
-  startTransition,
-  useCallback,
-  useLayoutEffect,
-  useState,
-} from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import MultipleChoicePanel from "@/components/game/MultipleChoicePanel";
 import QuestionProgress from "@/components/game/QuestionProgress";
 import TeamMajorityExplainer from "@/components/game/TeamMajorityExplainer";
-import PrimaryActionButton from "@/components/game/PrimaryActionButton";
+import McqRoundCountdownBar from "@/components/game/McqRoundCountdownBar";
+import { useTeamMcqRoundPhase } from "@/components/game/useTeamMcqRoundPhase";
+import { useTeamMcqBackgroundVotes } from "@/components/game/useTeamMcqBackgroundVotes";
 import { getQuoteQuestions } from "@/lib/quoteContent";
-import {
-  KEYS,
-  getLocalJson,
-  setLocalJson,
-} from "@/lib/clientStorage";
+import { KEYS, getLocalJson, setLocalJson } from "@/lib/clientStorage";
+import type { TeamMcqPublicSync } from "@/types";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -33,85 +27,89 @@ const body = Be_Vietnam_Pro({
 const QUESTIONS = getQuoteQuestions();
 
 export type IdentifyQuoteGameScreenProps = {
+  teamMcqSync: TeamMcqPublicSync | null;
   serverQuoteVotes: Record<string, number>;
 };
 
 export default function IdentifyQuoteGameScreen({
+  teamMcqSync,
   serverQuoteVotes,
 }: IdentifyQuoteGameScreenProps) {
   const fontBody = "var(--font-quote-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-quote-headline), ui-sans-serif, system-ui";
-  const [qi, setQi] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useLayoutEffect(() => {
+
+  const postVote = useCallback(async (questionId: string, optionIndex: number) => {
+    const res = await fetch("/api/game/quotes/vote", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId, optionIndex }),
+    });
+    return res.ok;
+  }, []);
+
+  const enqueueVote = useTeamMcqBackgroundVotes(postVote);
+
+  useEffect(() => {
     startTransition(() => {
       const fromLs = getLocalJson<Record<string, number>>(KEYS.quoteVotes) ?? {};
       setAnswers({ ...fromLs, ...serverQuoteVotes });
     });
   }, [serverQuoteVotes]);
 
-  const q = QUESTIONS[qi];
-  const total = QUESTIONS.length;
-  const selected = q ? (answers[q.id] ?? null) : null;
-  const isLast = qi >= total - 1;
+  const q = useMemo(() => {
+    if (!teamMcqSync) return null;
+    return QUESTIONS[teamMcqSync.questionIndex] ?? null;
+  }, [teamMcqSync]);
 
-  const persistAndSubmit = useCallback(async (questionId: string, index: number) => {
-    setSaving(true);
-    setError(null);
-    setAnswers((prev) => {
-      const next = { ...prev, [questionId]: index };
-      setLocalJson(KEYS.quoteVotes, next);
-      return next;
-    });
-    try {
-      const res = await fetch("/api/game/quotes/vote", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, optionIndex: index }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Could not save");
-      }
-    } catch {
-      setError("Network error");
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+  const { phase, secondsLeft } = useTeamMcqRoundPhase(teamMcqSync);
+  const canAnswer = phase === "answering";
+  const showReveal =
+    phase === "reveal" || phase === "syncing" || phase === "awaiting_host";
 
   const onSelect = useCallback(
     (index: number) => {
-      if (!q) return;
-      void persistAndSubmit(q.id, index);
+      if (!q || !canAnswer) return;
+      setAnswers((prev) => {
+        const next = { ...prev, [q.id]: index };
+        setLocalJson(KEYS.quoteVotes, next);
+        return next;
+      });
+      enqueueVote(q.id, index);
     },
-    [q, persistAndSubmit]
+    [q, canAnswer, enqueueVote]
   );
 
-  const goNext = useCallback(() => {
-    if (qi < total - 1) setQi((i) => i + 1);
-  }, [qi, total]);
+  const total = QUESTIONS.length;
+  const selected = q ? (answers[q.id] ?? null) : null;
+  const revealCorrectIndex =
+    showReveal && q ? q.correctIndex : null;
 
-  if (!q) {
+  if (!teamMcqSync || !q) {
     return null;
   }
 
   return (
     <div
-      className={`${headline.variable} ${body.variable} min-h-[70vh] pb-8 text-[#322e25]`}
+      className={`${headline.variable} ${body.variable} min-h-[70vh] pb-20 text-[#322e25]`}
       style={{ fontFamily: fontBody }}
     >
-      <header className="mb-6 flex items-center justify-between gap-2">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <span
-          className="rounded-full bg-[#a33700]/15 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#a33700]"
+          className="self-start rounded-full bg-[#a33700]/15 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#a33700]"
           style={{ fontFamily: fontBody }}
         >
           Challenge active
         </span>
-        <QuestionProgress current={qi + 1} total={total} label="Quote" />
+        <div className="w-full sm:max-w-md">
+          <McqRoundCountdownBar phase={phase} secondsLeft={secondsLeft} />
+        </div>
+        <QuestionProgress
+          current={teamMcqSync.questionIndex + 1}
+          total={total}
+          label="Quote"
+        />
       </header>
 
       <div className="relative mb-8">
@@ -161,36 +159,14 @@ export default function IdentifyQuoteGameScreen({
         </p>
       </div>
 
-      <div className="mt-8 space-y-4">
+      <div className="mt-8">
         <MultipleChoicePanel
           options={q.options}
           selectedIndex={selected}
           onSelect={onSelect}
-          disabled={saving}
+          disabled={!canAnswer}
+          revealCorrectIndex={revealCorrectIndex}
         />
-        {error ? (
-          <p className="text-center text-sm text-red-600" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="mt-8">
-        {isLast ? (
-          <p className="text-center text-sm text-[#605b50]">
-            You’ve reached the last quote — keep this screen open until the host
-            advances.
-          </p>
-        ) : (
-          <PrimaryActionButton
-            type="button"
-            disabled={selected === null}
-            onClick={goNext}
-            data-test-id="quote-next"
-          >
-            Next quote
-          </PrimaryActionButton>
-        )}
       </div>
     </div>
   );

@@ -78,11 +78,8 @@ export default function PartyProtocolScreen({
         aria-hidden
       />
 
-      <header className="relative z-10 mb-10">
-        <section
-          className="relative overflow-hidden rounded-2xl border border-[#322e25]/10 bg-gradient-to-br from-white/90 to-[#f8f0e0]/90 px-6 py-8 shadow-sm sm:px-8 sm:py-10"
-          aria-labelledby="party-welcome-heading"
-        >
+      <header className="relative z-10 mb-6" aria-labelledby="party-welcome-heading">
+        <section className="relative py-6 sm:py-8">
           <p
             className="mb-4 inline-block rounded-full bg-[#b50552]/12 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.25em] text-[#b50552]"
             style={{ fontFamily: fontHeadline }}
@@ -108,7 +105,7 @@ export default function PartyProtocolScreen({
               <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[#605b50]">
                 You&apos;re on the{" "}
                 <strong className="font-semibold text-[#322e25]">
-                  official games page
+                  official page
                 </strong>{" "}
                 for Nicola&apos;s celebration: team trivia, music bingo, live
                 scores, and prompts that stay in sync when the host moves the
@@ -128,14 +125,18 @@ export default function PartyProtocolScreen({
             </p>
           )}
         </section>
+      </header>
 
-        <p
-          className="mt-8 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
+      <div className="relative z-10 mb-6 space-y-3">
+        <h2
+          className="text-4xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-5xl"
           style={{ fontFamily: fontHeadline }}
         >
-          Next · logistics &amp; how we play
-        </p>
-      </header>
+          Venue
+          <br />
+          <span className="text-[#ff7943]">&amp; logistics</span>
+        </h2>
+      </div>
 
       <div className="relative z-10 mb-8 grid grid-cols-3 gap-2 rounded-2xl bg-[#322e25] px-4 py-5 text-center text-[#fef6e7]">
         <div>
@@ -225,13 +226,7 @@ export default function PartyProtocolScreen({
         </section>
       </div>
 
-      <div className="relative z-10 mt-2 mb-6 space-y-3">
-        <div className="flex items-center gap-4">
-          <div className="h-0.5 w-12 bg-[#b50552]" aria-hidden />
-          <p className="text-xs font-bold uppercase tracking-widest text-[#605b50]">
-            How tonight works
-          </p>
-        </div>
+      <div className="relative z-10 mt-8 mb-6 space-y-3">
         <h2
           className="text-4xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-5xl"
           style={{ fontFamily: fontHeadline }}

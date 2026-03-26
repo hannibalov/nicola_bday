@@ -4,6 +4,19 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import IdentifyQuoteGameScreen from "./IdentifyQuoteGameScreen";
 import { getQuoteQuestions } from "@/lib/quoteContent";
+import type { TeamMcqPublicSync } from "@/types";
+
+const QUESTIONS = getQuoteQuestions();
+
+function syncAtQuestion(i: number): TeamMcqPublicSync {
+  return {
+    questionIndex: i,
+    roundStartedAtEpochMs: Date.now(),
+    totalQuestions: QUESTIONS.length,
+    answerMs: 10_000,
+    revealMs: 3_000,
+  };
+}
 
 describe("IdentifyQuoteGameScreen", () => {
   const originalFetch = global.fetch;
@@ -21,7 +34,12 @@ describe("IdentifyQuoteGameScreen", () => {
     );
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    render(<IdentifyQuoteGameScreen serverQuoteVotes={{}} />);
+    render(
+      <IdentifyQuoteGameScreen
+        teamMcqSync={syncAtQuestion(0)}
+        serverQuoteVotes={{}}
+      />
+    );
 
     const q_id = getQuoteQuestions()[0].id;
     fireEvent.click(screen.getByRole("button", { name: /^B\./i }));
@@ -43,19 +61,21 @@ describe("IdentifyQuoteGameScreen", () => {
     expect(body.optionIndex).toBe(1);
   });
 
-  it("advances to next quote after Next when an answer is selected", async () => {
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ ok: true }),
-      })
-    ) as unknown as typeof fetch;
-
-    render(<IdentifyQuoteGameScreen serverQuoteVotes={{}} />);
-    fireEvent.click(screen.getByRole("button", { name: /^A\./i }));
-    fireEvent.click(screen.getByRole("button", { name: /next quote/i }));
-    expect(screen.getByTestId("question-progress")).toHaveTextContent(
-      /Quote 2 /
+  it("renders the quote for the synchronized question index", () => {
+    const { rerender } = render(
+      <IdentifyQuoteGameScreen
+        teamMcqSync={syncAtQuestion(0)}
+        serverQuoteVotes={{}}
+      />
     );
+    expect(screen.getByText(QUESTIONS[0].quote, { exact: false })).toBeInTheDocument();
+
+    rerender(
+      <IdentifyQuoteGameScreen
+        teamMcqSync={syncAtQuestion(1)}
+        serverQuoteVotes={{}}
+      />
+    );
+    expect(screen.getByText(QUESTIONS[1].quote, { exact: false })).toBeInTheDocument();
   });
 });

@@ -25,6 +25,11 @@ import {
 import { getQuoteQuestions } from "./quoteContent";
 import { teamsFromShuffledPlayerIds } from "./teamFormation";
 import { LOBBY_PRE_GAME_LEAD_MS } from "./lobbySchedule";
+import {
+  TEAM_MCQ_ANSWER_MS,
+  TEAM_MCQ_CYCLE_MS,
+  TEAM_MCQ_REVEAL_MS,
+} from "./teamMcqTiming";
 
 const BINGO_GAME_ID = GAMES[1]?.id ?? "game-bingo";
 const TRIVIA_GAME_ID = GAMES[0]?.id ?? "game-trivia";
@@ -49,6 +54,8 @@ const INITIAL_STATE: Omit<
   revision: 0,
   countdownRemaining: null,
   scheduledGameStartsAtEpochMs: null,
+  teamMcqRoundIndex: 0,
+  teamMcqRoundStartedAtEpochMs: null,
   games: GAMES,
 };
 
@@ -71,6 +78,8 @@ function getState(): SessionState {
       bingoClaimedLineKeysByPlayer: {},
       triviaVotesByPlayer: {},
       quoteVotesByPlayer: {},
+      teamMcqRoundIndex: 0,
+      teamMcqRoundStartedAtEpochMs: null,
     };
   }
   const s = globalForStore.__nicola_store;
@@ -82,6 +91,12 @@ function getState(): SessionState {
   }
   if (s.scheduledGameStartsAtEpochMs === undefined) {
     s.scheduledGameStartsAtEpochMs = null;
+  }
+  if (s.teamMcqRoundIndex === undefined) {
+    s.teamMcqRoundIndex = 0;
+  }
+  if (s.teamMcqRoundStartedAtEpochMs === undefined) {
+    s.teamMcqRoundStartedAtEpochMs = null;
   }
   return s;
 }
@@ -130,6 +145,54 @@ export function applyDueScheduledTransitions(nowMs: number = Date.now()): void {
   notifySessionChanged();
 }
 
+/**
+ * Advances trivia / quotes MCQ rounds on a fixed server timeline so all clients stay aligned.
+ * Call from any read path (same pattern as {@link applyDueScheduledTransitions}).
+ */
+export function applyDueTeamMcqRoundAdvance(nowMs: number = Date.now()): void {
+  const state = getState();
+  const step = state.guestStep;
+  if (step !== "game_trivia" && step !== "game_quotes") {
+    return;
+  }
+  if (state.teamMcqRoundStartedAtEpochMs == null) {
+    state.teamMcqRoundStartedAtEpochMs = nowMs;
+    state.teamMcqRoundIndex = 0;
+    state.revision += 1;
+    notifySessionChanged();
+    return;
+  }
+
+  const total =
+    step === "game_trivia"
+      ? TRIVIA_QUESTIONS.length
+      : getQuoteQuestions().length;
+  let changed = false;
+  while (
+    state.teamMcqRoundIndex < total - 1 &&
+    nowMs >= state.teamMcqRoundStartedAtEpochMs + TEAM_MCQ_CYCLE_MS
+  ) {
+    state.teamMcqRoundIndex += 1;
+    state.teamMcqRoundStartedAtEpochMs += TEAM_MCQ_CYCLE_MS;
+    changed = true;
+  }
+
+  if (changed) {
+    state.revision += 1;
+    notifySessionChanged();
+  }
+}
+
+function activeTeamMcqQuestionId(state: SessionState): string | null {
+  const step = state.guestStep;
+  if (step !== "game_trivia" && step !== "game_quotes") return null;
+  const idx = state.teamMcqRoundIndex;
+  if (step === "game_trivia") {
+    return TRIVIA_QUESTIONS[idx]?.id ?? null;
+  }
+  return getQuoteQuestions()[idx]?.id ?? null;
+}
+
 function lobbyTeamsFromSession(state: SessionState): LobbyTeamRoster[] {
   return state.teams.map((t) => ({
     name: t.name,
@@ -164,10 +227,14 @@ function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
 
   if (to === "game_trivia") {
     state.triviaVotesByPlayer = {};
+    state.teamMcqRoundIndex = 0;
+    state.teamMcqRoundStartedAtEpochMs = Date.now();
   }
 
   if (to === "game_quotes") {
     state.quoteVotesByPlayer = {};
+    state.teamMcqRoundIndex = 0;
+    state.teamMcqRoundStartedAtEpochMs = Date.now();
   }
 
   if (to === "game_bingo") {
@@ -336,13 +403,23 @@ export function claimBingo(
 
 export type TriviaVoteResult =
   | { ok: true }
-  | { ok: false; error: "not_active" | "unknown_player" | "bad_question" | "bad_option" };
+  | {
+      ok: false;
+      error:
+        | "not_active"
+        | "unknown_player"
+        | "bad_question"
+        | "bad_option"
+        | "wrong_question";
+    };
 
 export function submitTriviaVote(
   playerId: string,
   questionId: string,
   optionIndex: number
 ): TriviaVoteResult {
+  applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
   const state = getState();
   if (state.guestStep !== "game_trivia") {
     return { ok: false, error: "not_active" };
@@ -356,6 +433,10 @@ export function submitTriviaVote(
   if (!isValidTriviaOptionIndex(optionIndex)) {
     return { ok: false, error: "bad_option" };
   }
+  const activeId = activeTeamMcqQuestionId(state);
+  if (questionId !== activeId) {
+    return { ok: false, error: "wrong_question" };
+  }
   const prev = state.triviaVotesByPlayer[playerId] ?? {};
   state.triviaVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
   return { ok: true };
@@ -363,13 +444,23 @@ export function submitTriviaVote(
 
 export type QuoteVoteResult =
   | { ok: true }
-  | { ok: false; error: "not_active" | "unknown_player" | "bad_question" | "bad_option" };
+  | {
+      ok: false;
+      error:
+        | "not_active"
+        | "unknown_player"
+        | "bad_question"
+        | "bad_option"
+        | "wrong_question";
+    };
 
 export function submitQuoteVote(
   playerId: string,
   questionId: string,
   optionIndex: number
 ): QuoteVoteResult {
+  applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
   const state = getState();
   if (state.guestStep !== "game_quotes") {
     return { ok: false, error: "not_active" };
@@ -382,6 +473,10 @@ export function submitQuoteVote(
   }
   if (!isValidTriviaOptionIndex(optionIndex)) {
     return { ok: false, error: "bad_option" };
+  }
+  const activeId = activeTeamMcqQuestionId(state);
+  if (questionId !== activeId) {
+    return { ok: false, error: "wrong_question" };
   }
   const prev = state.quoteVotesByPlayer[playerId] ?? {};
   state.quoteVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
@@ -398,6 +493,7 @@ export function registerPlayer(nickname: string): string {
 
 export function getSessionState(): SessionState {
   applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
   const state = getState();
   return { ...state, players: [...state.players], teams: [...state.teams] };
 }
@@ -422,6 +518,7 @@ function shouldShowMyTeam(state: SessionState, game: (typeof GAMES)[number] | nu
 
 export function getPublicState(playerId: string | null): PublicState {
   applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
   const state = getState();
   const game = currentGameForPublic(state);
   let myTeam: Team | null = null;
@@ -480,6 +577,21 @@ export function getPublicState(playerId: string | null): PublicState {
   const playerKnownToSession =
     playerId == null || state.players.some((p) => p.id === playerId);
 
+  const teamMcqSync =
+    (state.guestStep === "game_trivia" || state.guestStep === "game_quotes") &&
+    state.teamMcqRoundStartedAtEpochMs != null
+      ? {
+          questionIndex: state.teamMcqRoundIndex,
+          roundStartedAtEpochMs: state.teamMcqRoundStartedAtEpochMs,
+          totalQuestions:
+            state.guestStep === "game_trivia"
+              ? TRIVIA_QUESTIONS.length
+              : getQuoteQuestions().length,
+          answerMs: TEAM_MCQ_ANSWER_MS,
+          revealMs: TEAM_MCQ_REVEAL_MS,
+        }
+      : null;
+
   return {
     guestStep: state.guestStep,
     revision: state.revision,
@@ -500,11 +612,13 @@ export function getPublicState(playerId: string | null): PublicState {
     myBingoScore,
     myTriviaVotes,
     myQuoteVotes,
+    teamMcqSync,
   };
 }
 
 export function advancePhase(): void {
   applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
   const state = getState();
   const from = state.guestStep;
 
@@ -547,6 +661,8 @@ export function resetSession(): void {
     triviaVotesByPlayer: {},
     quoteVotesByPlayer: {},
     scheduledGameStartsAtEpochMs: null,
+    teamMcqRoundIndex: 0,
+    teamMcqRoundStartedAtEpochMs: null,
   };
   notifySessionChanged();
 }

@@ -9,7 +9,9 @@ import {
   submitTriviaVote,
   submitQuoteVote,
   applyDueScheduledTransitions,
+  applyDueTeamMcqRoundAdvance,
 } from "./store";
+import { TEAM_MCQ_CYCLE_MS } from "./teamMcqTiming";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 import { getQuoteQuestions } from "./quoteContent";
 import { GAMES } from "./gameConfig";
@@ -114,9 +116,15 @@ describe("store", () => {
       }
       const teams = getSessionState().teams;
       const teamA = teams[0]!;
-      for (const q of TRIVIA_QUESTIONS) {
+      let t = getSessionState().teamMcqRoundStartedAtEpochMs!;
+      for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
+        const q = TRIVIA_QUESTIONS[qi]!;
         for (const pid of teamA.playerIds) {
           expect(submitTriviaVote(pid, q.id, q.correctIndex).ok).toBe(true);
+        }
+        if (qi < TRIVIA_QUESTIONS.length - 1) {
+          t += TEAM_MCQ_CYCLE_MS + 1;
+          applyDueTeamMcqRoundAdvance(t);
         }
       }
       advancePhase();
@@ -276,6 +284,8 @@ describe("store", () => {
       submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 2);
       const pub = getPublicState(id);
       expect(pub.myTriviaVotes[TRIVIA_QUESTIONS[0].id]).toBe(2);
+      expect(pub.teamMcqSync).not.toBeNull();
+      expect(pub.teamMcqSync?.questionIndex).toBe(0);
     });
 
     it("returns empty myQuoteVotes outside game_quotes", () => {
@@ -292,6 +302,7 @@ describe("store", () => {
       submitQuoteVote(id, q0.id, 2);
       const pub = getPublicState(id);
       expect(pub.myQuoteVotes[q0.id]).toBe(2);
+      expect(pub.teamMcqSync?.questionIndex).toBe(0);
     });
 
     it("returns empty myBingoClaimedLineKeys outside game_bingo", () => {
@@ -388,6 +399,8 @@ describe("store", () => {
       expect(state.bingoClaimedLineKeysByPlayer).toEqual({});
       expect(state.triviaVotesByPlayer).toEqual({});
       expect(state.quoteVotesByPlayer).toEqual({});
+      expect(state.teamMcqRoundIndex).toBe(0);
+      expect(state.teamMcqRoundStartedAtEpochMs).toBeNull();
     });
   });
 
@@ -443,6 +456,18 @@ describe("store", () => {
         1
       );
     });
+
+    it("rejects vote for a question that is not the active round", () => {
+      const id = registerPlayer("A");
+      while (getSessionState().guestStep !== "game_trivia") {
+        stepForwardInTests();
+      }
+      const wrongId = TRIVIA_QUESTIONS[1]!.id;
+      expect(submitTriviaVote(id, wrongId, 0)).toEqual({
+        ok: false,
+        error: "wrong_question",
+      });
+    });
   });
 
   describe("submitQuoteVote", () => {
@@ -462,6 +487,34 @@ describe("store", () => {
       expect(getSessionState().quoteVotesByPlayer).toEqual({});
       expect(submitQuoteVote(id, q0.id, 1).ok).toBe(true);
       expect(getSessionState().quoteVotesByPlayer[id]?.[q0.id]).toBe(1);
+    });
+
+    it("rejects quote vote when not the active question", () => {
+      const id = registerPlayer("A");
+      while (getSessionState().guestStep !== "game_quotes") {
+        stepForwardInTests();
+      }
+      const q1 = getQuoteQuestions()[1]!;
+      expect(submitQuoteVote(id, q1.id, 0)).toEqual({
+        ok: false,
+        error: "wrong_question",
+      });
+    });
+  });
+
+  describe("applyDueTeamMcqRoundAdvance", () => {
+    it("advances question index after each full cycle on the server timeline", () => {
+      registerPlayer("A");
+      while (getSessionState().guestStep !== "game_trivia") {
+        stepForwardInTests();
+      }
+      const t0 = getSessionState().teamMcqRoundStartedAtEpochMs!;
+      expect(getSessionState().teamMcqRoundIndex).toBe(0);
+      applyDueTeamMcqRoundAdvance(t0 + TEAM_MCQ_CYCLE_MS + 1);
+      expect(getSessionState().teamMcqRoundIndex).toBe(1);
+      expect(getSessionState().teamMcqRoundStartedAtEpochMs).toBe(
+        t0 + TEAM_MCQ_CYCLE_MS
+      );
     });
   });
 });

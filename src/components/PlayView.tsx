@@ -195,7 +195,10 @@ export default function PlayView() {
       return <WaitingLobby />;
     }
     return (
-      <IdentifyQuoteGameScreen serverQuoteVotes={state.myQuoteVotes} />
+      <IdentifyQuoteGameScreen
+        teamMcqSync={state.teamMcqSync}
+        serverQuoteVotes={state.myQuoteVotes}
+      />
     );
   }
 
@@ -205,8 +208,8 @@ export default function PlayView() {
     }
     return (
       <TriviaGameScreen
+        teamMcqSync={state.teamMcqSync}
         serverMyVotes={state.myTriviaVotes}
-        onVoteSynced={fetchState}
       />
     );
   }

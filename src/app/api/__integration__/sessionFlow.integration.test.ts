@@ -14,9 +14,11 @@ import {
   resetSession,
   getSessionState,
   applyDueScheduledTransitions,
+  applyDueTeamMcqRoundAdvance,
 } from "@/lib/store";
 import type { GuestStep } from "@/types";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
+import { TEAM_MCQ_CYCLE_MS } from "@/lib/teamMcqTiming";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import { GAMES } from "@/lib/gameConfig";
 import type { PublicState } from "@/types";
@@ -273,7 +275,9 @@ describe("session flow integration (HTTP + store)", () => {
     }
     await advanceGuestStepUntil("game_trivia");
     const teamA = getSessionState().teams[0]!;
-    for (const q of TRIVIA_QUESTIONS) {
+    let t = getSessionState().teamMcqRoundStartedAtEpochMs!;
+    for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
+      const q = TRIVIA_QUESTIONS[qi]!;
       for (const pid of teamA.playerIds) {
         setPlayerCookie(pid);
         const r = await postTriviaVote(
@@ -284,6 +288,10 @@ describe("session flow integration (HTTP + store)", () => {
           })
         );
         expect(r.status).toBe(200);
+      }
+      if (qi < TRIVIA_QUESTIONS.length - 1) {
+        t += TEAM_MCQ_CYCLE_MS + 1;
+        applyDueTeamMcqRoundAdvance(t);
       }
     }
     await adminStartNext();

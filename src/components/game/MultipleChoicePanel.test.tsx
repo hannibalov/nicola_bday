@@ -32,6 +32,20 @@ describe("MultipleChoicePanel", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("highlights correct option when revealCorrectIndex is set", () => {
+    render(
+      <MultipleChoicePanel
+        options={["One", "Two", "Three", "Four"]}
+        selectedIndex={1}
+        onSelect={() => {}}
+        disabled
+        revealCorrectIndex={2}
+      />
+    );
+    const correct = screen.getByRole("button", { name: /^C\./i });
+    expect(correct.className).toContain("emerald");
+  });
+
   it("shows prompt and topic when provided", () => {
     render(
       <MultipleChoicePanel
