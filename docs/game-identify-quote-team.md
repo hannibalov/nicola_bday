@@ -1,7 +1,6 @@
 # Game: Who said it? (team quotes)
 
-**Audience:** Implementation agent (content + team logic + UI). **Team-based** like trivia.  
-**Design reference:** `stitch_birthday_trivia_individual_game/identify_this_quote/code.html`
+**Audience:** Implementation agent (content + team logic + UI). **Team-based** like trivia.
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint). **Reuse** same MCQ + majority stack as trivia — [§13](./ARCHITECTURE.md#reuse).
 

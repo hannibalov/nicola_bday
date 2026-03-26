@@ -38,19 +38,9 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 
 ---
 
-## 3. Design references (Stitch HTML)
+## 3. UI and styling
 
-These are visual/layout references under the repo root (not part of the Next.js runtime):
-
-| Flow | Reference path |
-|------|----------------|
-| Guest check-in | `stitch_birthday_trivia_individual_game/guest_check_in/code.html` |
-| Party protocol / theme | `stitch_birthday_trivia_individual_game/party_protocol_theme/code.html` |
-| Lobby | `stitch_birthday_trivia_individual_game_lobby/code.html` |
-| Trivia rules | `stitch_birthday_trivia_individual_game/trivia_rules/code.html` |
-| Leaderboard | `stitch_birthday_trivia_individual_game_leaderboard/code.html` |
-| Music bingo rules | `stitch_birthday_trivia_individual_game/music_bingo_rules/code.html` |
-| Who said it | `stitch_birthday_trivia_individual_game/identify_this_quote/code.html` |
+Guest screens are implemented in **`src/components/**`** with **React** and **Tailwind CSS 4** (fonts via `next/font`). There are no separate static HTML design dumps in the repo; treat the live components as the source of truth for layout and visuals.
 
 ---
 
@@ -68,7 +58,7 @@ These are visual/layout references under the repo root (not part of the Next.js 
 
 ## 5. Implementation snapshot (current)
 
-The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, Stitch-aligned lobbies, majority-based team scoring, SSE, and localStorage helpers. In-memory server state remains **per Node/serverless instance** (same limitation as before).
+The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, game lobbies, majority-based team scoring, SSE, and localStorage helpers. In-memory server state remains **per Node/serverless instance** (same limitation as before).
 
 ### 5.1 Routes
 

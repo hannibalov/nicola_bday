@@ -1,7 +1,6 @@
 # Screen: Leaderboard (between games)
 
-**Audience:** Implementation agent (UI + data).  
-**Design reference:** `stitch_birthday_trivia_individual_game_leaderboard/code.html`
+**Audience:** Implementation agent (UI + data).
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint).
 

@@ -1,7 +1,6 @@
 # Game: Music bingo (1970s)
 
-**Audience:** Implementation agent (UI + deterministic card + local scoring). **Individual** game.  
-**Design reference:** `stitch_birthday_trivia_individual_game/music_bingo_rules/code.html`
+**Audience:** Implementation agent (UI + deterministic card + local scoring). **Individual** game.
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint). Reuse shell/header patterns from [§13](./ARCHITECTURE.md#reuse); grid UI stays game-specific.
 

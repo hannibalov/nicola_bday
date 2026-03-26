@@ -21,8 +21,8 @@ export type GuestPlayShellProps = {
 };
 
 /**
- * Shared guest play chrome: warm backdrop, noise, glass header — aligned with
- * `stitch_birthday_trivia_individual_game_lobby/code.html` and {@link LobbyScreen}.
+ * Shared guest play chrome: warm backdrop, noise, glass header — used with
+ * {@link LobbyScreen} and the rest of the guest play flow.
  */
 export default function GuestPlayShell({
   children,

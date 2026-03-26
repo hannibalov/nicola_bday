@@ -151,7 +151,7 @@ export default function PartyProtocolScreen({
         <section className="overflow-hidden rounded-xl bg-[#eae2d0]">
           <div className="relative aspect-[16/10] w-full bg-[#d8d0c4]">
             <Image
-              src="/venue.png"
+              src="/images/venue.png"
               alt="Miles — cocktails, music, and billiards in Barcelona"
               fill
               className="object-cover"

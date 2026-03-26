@@ -1,8 +1,7 @@
 # Screen: Guest check-in
 
 **Audience:** Implementation agent (UI + client gating + API hook).  
-**Route today:** `/` (`src/app/page.tsx` + `src/components/NicknameForm.tsx`).  
-**Design reference:** `stitch_birthday_trivia_individual_game/guest_check_in/code.html`
+**Route today:** `/` (`src/app/page.tsx` + `src/components/NicknameForm.tsx`).
 
 **Process:** **TDD**, then **`yarn lint`** — [ARCHITECTURE.md §11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint).
 
@@ -51,7 +50,7 @@ First screen for guests. Collect a **quirky nickname** explicitly **not** a real
 
 - [ ] **Tests written first** (red) for new behavior, then implementation (green), then refactor.
 - [ ] **`yarn lint`** passes on touched files.
-- [ ] Visual layout informed by Stitch `guest_check_in` (colors, typography, mobile safe area).
+- [ ] Visual layout: mobile-first, readable typography, safe areas, cohesive with `GuestPlayShell` / party theme.
 - [ ] Explicit messaging: quirky nicknames, not real names.
 - [ ] On success: `playerId` + nickname persisted in **localStorage** (namespaced key prefix per `ARCHITECTURE.md`).
 - [ ] Still works if localStorage fails (cookie-only path).

@@ -1,7 +1,6 @@
 # Game: Team trivia (UK, 70s, Barcelona)
 
-**Audience:** Implementation agent (game logic + UI + server scoring). team-based  
-**Design reference:** `stitch_birthday_trivia_individual_game/trivia_rules/code.html`
+**Audience:** Implementation agent (game logic + UI + server scoring). team-based
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint). **Reuse** shared MCQ UI and team explainer — [§13](./ARCHITECTURE.md#reuse).
 

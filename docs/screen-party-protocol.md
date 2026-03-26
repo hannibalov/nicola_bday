@@ -1,8 +1,7 @@
 # Screen: Party protocol / theme
 
 **Audience:** Implementation agent (UI + gating).  
-**Route target:** After check-in, before any host-controlled lobby.  
-**Design reference:** `stitch_birthday_trivia_individual_game/party_protocol_theme/code.html`
+**Route target:** After check-in, before any host-controlled lobby.
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint).
 
@@ -18,7 +17,7 @@ Show party rules, theme, or “how the evening works” in a **dedicated** full-
 
 - **Gating:** If no `playerId` (cookie or localStorage backup), redirect to `/` or check-in.
 - Visible **once per device** or repeatable per product decision; prefer **localStorage flag** (not only `sessionStorage`) so refresh on bad network does not force re-read — or derive from “has completed protocol” boolean stored locally.
-- Content: static or lightly configurable (Markdown-like sections or JSX); match Stitch reference for hierarchy and tone.
+- Content: static or lightly configurable (Markdown-like sections or JSX); clear hierarchy and on-brand tone.
 
 ---
 

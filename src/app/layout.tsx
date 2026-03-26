@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Nicola Birthday Games",
   description: "Quiz and games – join with your nickname and play!",
+  icons: {
+    icon: [{ url: "/images/nicola.jpeg", type: "image/jpeg" }],
+    apple: [{ url: "/images/nicola.jpeg", type: "image/jpeg" }],
+  },
 };
 
 export default function RootLayout({

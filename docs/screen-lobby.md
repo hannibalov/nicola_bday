@@ -1,7 +1,6 @@
 # Screen: Lobby (instructions + roster)
 
-**Audience:** Implementation agent (UI + data wiring).  
-**Design reference:** `stitch_birthday_trivia_individual_game_lobby/code.html`
+**Audience:** Implementation agent (UI + data wiring).
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint). **Reuse:** one `LobbyScreen` for both game lobbies — [ARCHITECTURE.md §13](./ARCHITECTURE.md#reuse).
 
