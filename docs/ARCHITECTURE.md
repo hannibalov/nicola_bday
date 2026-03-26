@@ -29,7 +29,7 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 | 6 | Lobby (game 2) | Individual | Reuse lobby UI; music bingo copy. |
 | 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **30** 1970s songs in pool. **500** points per valid line; `POST /api/game/bingo/claim`. Honor system for marking heard songs. |
 | 8 | Leaderboard | — | After bingo. |
-| 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **15** quotes, **4** options, **50** points per correct team answer (same majority rule). |
+| 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each, **50** points per correct team answer (same majority rule). |
 | 10 | Leaderboard | — | Final standings (`leaderboard_final`). |
 
 **Admin:** Sees connected players and drives the **global step** via **Start next** (and optional **Reset**).
@@ -106,7 +106,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |---------|----------|
 | Trivia (10 × 4 options, topics UK / 1970s / Barcelona) | `src/content/trivia.ts` |
 | Bingo pool (30 titles) | `src/content/bingo.ts`; card seeded per player in `MusicBingoScreen` + `bingoCard.ts` |
-| Quotes (15 × 4 options) | `src/lib/content/quoteQuestions.json` + `quoteContent.ts` |
+| Quotes (N × 4 from JSON) | `src/lib/content/quoteQuestions.json` + `quoteContent.ts` |
 
 ### 5.5 Client persistence (`src/lib/clientStorage.ts`)
 

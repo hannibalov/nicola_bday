@@ -1,167 +1,233 @@
 [
   {
     "id": "q1",
-    "quote": "“I’ll be back.”",
+    "quote": "“Nothing is absolute. Everything changes, everything moves, everything revolves, everything flies and goes away.”",
     "options": [
-      "The Governator (kitchen remix)",
-      "Clint Eastwood",
-      "Your flatmate at 3am",
-      "Bruce Willis"
+      "Diego Rivera",
+      "Frida Kahlo",
+      "Salvador Dalí",
+      "Leonora Carrington"
     ],
-    "correctIndex": 0
+    "correctIndex": 1
   },
   {
     "id": "q2",
-    "quote": "“May the Force be with you.”",
+    "quote": "“You could get a truck through there love.”",
     "options": [
-      "Obi-Juan Kenobi",
-      "Captain Kirk (oops)",
-      "Flash Gordon’s mum",
-      "Paul from HR"
+      "Karen",
+      "Dad",
+      "Mom",
+      "Michelle"
     ],
-    "correctIndex": 0
+    "correctIndex": 1
   },
   {
     "id": "q3",
-    "quote": "“Here’s looking at you, kid.”",
+    "quote": "“Tell all the truth but tell it slant,”",
     "options": [
-      "Bogey (and a birthday toast)",
-      "Scarlett O’Hara",
-      "Sam the piano cat",
-      "The Maltese Falcon (the bird)"
+      "Emily Dickinson",
+      "Walt Whitman",
+      "Robert Frost",
+      "Elizabeth Bishop"
     ],
     "correctIndex": 0
   },
   {
     "id": "q4",
-    "quote": "“You can’t handle the truth!”",
+    "quote": "“There’s days and days.”",
     "options": [
-      "Col. Jessup, drama club edition",
-      "Tom Cruise on a scooter",
-      "Jerry Maguire’s goldfish",
-      "The Firm’s receptionist"
+      "Guy",
+      "Sam",
+      "Joao",
+      "Chato"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q5",
-    "quote": "“I’m gonna make him an offer he can’t refuse.”",
+    "quote": "“Each friend represents a world in us, a world possibly not born until they arrive, and it is only by this meeting that a new world is born.”",
     "options": [
-      "The Godfather (birthday cake tier)",
-      "Goodfellas pizza delivery",
-      "Scarface’s parrot",
-      "Casino night DJ"
+      "Colette",
+      "Anaïs Nin",
+      "Simone de Beauvoir",
+      "Marguerite Duras"
     ],
-    "correctIndex": 0
+    "correctIndex": 1
   },
   {
     "id": "q6",
-    "quote": "“To infinity and beyond!”",
+    "quote": "“Where you cannot love, do not prolong your stay.”",
     "options": [
-      "Buzz Lightyear",
-      "NASA intern #4",
-      "A very ambitious soufflé",
-      "The birthday balloon"
+      "Frida Kahlo",
+      "Remedios Varo",
+      "Tina Modotti",
+      "Diego Rivera"
     ],
     "correctIndex": 0
   },
   {
     "id": "q7",
-    "quote": "“There’s no place like home.”",
+    "quote": "“What’s for dinner?”",
     "options": [
-      "Dorothy (ruby slippers polish)",
-      "Mary Poppins’ umbrella",
-      "A very lost GPS",
-      "The cat from Oz"
+      "Phil",
+      "Peter",
+      "Oscar",
+      "Mauro"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q8",
-    "quote": "“Why so serious?”",
+    "quote": "“One cannot think well, love well, sleep well, if one has not dined well.”",
     "options": [
-      "Heath’s Joker (legend)",
-      "Batman’s accountant",
-      "The birthday clown (unfair)",
-      "Alfred with jokes"
+      "D. H. Lawrence",
+      "Katherine Mansfield",
+      "Virginia Woolf",
+      "Vita Sackville-West"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q9",
-    "quote": "“Life is like a box of chocolates.”",
+    "quote": "“I’m too Latino for you.”",
     "options": [
-      "Forrest (party mix)",
-      "The Green Mile marker",
-      "Wilson the volleyball",
-      "Cast Away’s raft"
+      "Shira",
+      "Natalie",
+      "Sian",
+      "Violette"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q10",
-    "quote": "“I see dead people.”",
+    "quote": "“We have to free half of the human race, the women, so that they can help to free the other half.”",
     "options": [
-      "Haley Joel (spoiler era)",
-      "The Others’ estate agent",
-      "Your hangover Sunday",
-      "The Ring repair guy"
+      "Susan B. Anthony",
+      "Millicent Fawcett",
+      "Gloria Steinem",
+      "Emmeline Pankhurst"
     ],
-    "correctIndex": 0
+    "correctIndex": 3
   },
   {
     "id": "q11",
-    "quote": "“Keep your friends close, but your enemies closer.”",
+    "quote": "“You can’t kid a kidder.”",
     "options": [
-      "Michael Corleone, sequel boss",
-      "Sonny’s temper",
-      "Fredo’s goldfish",
-      "The cannoli accountant"
+      "Mom",
+      "Mauro",
+      "Sam",
+      "Dad"
     ],
-    "correctIndex": 0
+    "correctIndex": 3
   },
   {
     "id": "q12",
-    "quote": "“Say hello to my little friend!”",
+    "quote": "“I drank to drown my sorrows, but the damned things learned how to swim.”",
     "options": [
-      "Tony Montana (foam finger)",
-      "The Untouchables extras",
-      "A surprised piñata",
-      "Heat’s coffee shop"
+      "Salvador Dalí",
+      "Diego Rivera",
+      "Frida Kahlo",
+      "Leonora Carrington"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q13",
-    "quote": "“I’m king of the world!”",
+    "quote": "“Not with that attitude you can’t” — whenever you swear you can’t do something.",
     "options": [
-      "Jack at the bow",
-      "The iceberg’s lawyer",
-      "Celine’s soundcheck",
-      "The door (controversial)"
+      "Susie",
+      "Gilad",
+      "Rodrigo",
+      "Peter"
     ],
-    "correctIndex": 0
+    "correctIndex": 2
   },
   {
     "id": "q14",
-    "quote": "“Houston, we have a problem.”",
+    "quote": "“Life shrinks or expands in proportion to one’s courage.”",
     "options": [
-      "Apollo 13 (capsule karaoke)",
-      "Gravity Sandra",
-      "Mission Control snack bar",
-      "Interstellar cornfield"
+      "Marguerite Duras",
+      "Colette",
+      "Simone de Beauvoir",
+      "Anaïs Nin"
+    ],
+    "correctIndex": 3
+  },
+  {
+    "id": "q15",
+    "quote": "“I will beat the sorry out of you.”",
+    "options": [
+      "Violette",
+      "Diana",
+      "Karen",
+      "Susie"
+    ],
+    "correctIndex": 1
+  },
+  {
+    "id": "q16",
+    "quote": "“I am my own muse, the subject I know best.”",
+    "options": [
+      "Frida Kahlo",
+      "Tina Modotti",
+      "Remedios Varo",
+      "Salvador Dalí"
     ],
     "correctIndex": 0
   },
   {
-    "id": "q15",
-    "quote": "“Nobody puts Baby in a corner.”",
+    "id": "q17",
+    "quote": "“Relationships are not mandatory.”",
     "options": [
-      "Johnny Castle",
-      "Footloose mayor",
-      "A confused bookshelf",
-      "The corner (it objects)"
+      "Phil",
+      "Peter",
+      "Guy",
+      "Joao"
+    ],
+    "correctIndex": 3
+  },
+  {
+    "id": "q18",
+    "quote": "“Hope is the thing with feathers that perches in the soul — and sings the tune without the words — and never stops at all.”",
+    "options": [
+      "Sylvia Plath",
+      "Charlotte Brontë",
+      "Emily Dickinson",
+      "Emily Brontë"
+    ],
+    "correctIndex": 2
+  },
+  {
+    "id": "q19",
+    "quote": "“We don’t see things as they are, we see them as we are.”",
+    "options": [
+      "Colette",
+      "Simone de Beauvoir",
+      "Marguerite Duras",
+      "Anaïs Nin"
+    ],
+    "correctIndex": 3
+  },
+  {
+    "id": "q20",
+    "quote": "“If you do not tell the truth about yourself you cannot tell it about other people.”",
+    "options": [
+      "Virginia Woolf",
+      "Katherine Mansfield",
+      "D. H. Lawrence",
+      "Vita Sackville-West"
     ],
     "correctIndex": 0
+  },
+  {
+    "id": "q21",
+    "quote": "“Fall in love with yourself, with life, and then with whoever you want.”",
+    "options": [
+      "Leonora Carrington",
+      "Diego Rivera",
+      "Salvador Dalí",
+      "Frida Kahlo"
+    ],
+    "correctIndex": 3
   }
 ]

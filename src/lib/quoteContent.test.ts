@@ -1,9 +1,9 @@
 import { parseQuoteQuestions, getQuoteQuestions } from "./quoteContent";
 
 describe("parseQuoteQuestions", () => {
-  it("accepts the bundled 15-item pack", () => {
+  it("accepts the bundled quote pack", () => {
     const qs = getQuoteQuestions();
-    expect(qs).toHaveLength(15);
+    expect(qs.length).toBeGreaterThan(0);
     qs.forEach((q) => {
       expect(q.options).toHaveLength(4);
       expect(q.correctIndex).toBeGreaterThanOrEqual(0);
@@ -11,8 +11,8 @@ describe("parseQuoteQuestions", () => {
     });
   });
 
-  it("rejects wrong count", () => {
-    expect(() => parseQuoteQuestions([])).toThrow(/15/);
+  it("rejects empty pack", () => {
+    expect(() => parseQuoteQuestions([])).toThrow(/at least one/);
   });
 
   it("rejects invalid options length", () => {
@@ -22,7 +22,7 @@ describe("parseQuoteQuestions", () => {
       options: ["a", "b"],
       correctIndex: 0,
     };
-    const items = Array.from({ length: 15 }, (_, i) =>
+    const items = Array.from({ length: 3 }, (_, i) =>
       i === 0
         ? bad
         : {
@@ -38,7 +38,7 @@ describe("parseQuoteQuestions", () => {
   it("rejects bad correctIndex", () => {
     expect(() =>
       parseQuoteQuestions(
-        Array.from({ length: 15 }, (_, i) => ({
+        Array.from({ length: 2 }, (_, i) => ({
           id: `q${i}`,
           quote: `"${i}"`,
           options: ["a", "b", "c", "d"],

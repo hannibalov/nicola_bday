@@ -7,6 +7,9 @@ import {
   LOBBY_COUNTDOWN_SECONDS,
   LOBBY_GO_PHASE_MS,
 } from "@/lib/lobbySchedule";
+import { getQuoteQuestions } from "@/lib/quoteContent";
+
+const QUOTE_ROUND_COUNT = getQuoteQuestions().length;
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -153,7 +156,7 @@ export default function LobbyScreen({
             {variant === "trivia"
               ? "Read how scoring works, find your team below. When the host starts the countdown, it runs here — no need to refresh."
               : variant === "identify_quote"
-                ? "New teams for this round — find yours below. Majority rule matches trivia; 15 quotes, 50 pts each."
+                ? `New teams for this round — find yours below. Majority rule matches trivia; ${QUOTE_ROUND_COUNT} quotes, 50 pts each.`
                 : "Individual play — your card, your taps. Mark ’70s titles when you hear them; host runs the audio in the room."}
           </p>
         </div>
@@ -247,7 +250,7 @@ export default function LobbyScreen({
               {variant === "trivia"
                 ? "UK · Barcelona · 1970s threads — 10 questions, 50 pts each."
                 : variant === "identify_quote"
-                  ? "15 quotes, four choices — your team’s majority locks the answer."
+                  ? `${QUOTE_ROUND_COUNT} quotes, four choices — your team’s majority locks the answer.`
                   : "2×3 card, 30 classic titles in the pool — 500 pts per bingo line."}
             </p>
           </div>

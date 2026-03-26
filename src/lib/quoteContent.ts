@@ -15,13 +15,13 @@ function isOptionTuple(v: unknown): v is [string, string, string, string] {
   );
 }
 
-/** Validates the bundled quote pack (15 items, 4 options, correctIndex in range). */
+/** Validates the bundled quote pack (≥1 item, 4 options each, correctIndex in range). */
 export function parseQuoteQuestions(raw: unknown): QuoteQuestion[] {
   if (!Array.isArray(raw)) {
     throw new Error("quote questions: expected array");
   }
-  if (raw.length !== 15) {
-    throw new Error(`quote questions: expected 15 items, got ${raw.length}`);
+  if (raw.length < 1) {
+    throw new Error("quote questions: expected at least one item");
   }
   const out: QuoteQuestion[] = [];
   for (let i = 0; i < raw.length; i++) {
