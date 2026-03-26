@@ -62,7 +62,7 @@ export interface SessionState {
   teams: Team[];
   gameScores: Record<string, Record<string, number>>; // gameId -> (playerId or teamId) -> points
   games: GameConfig[];
-  /** During music bingo: winning line keys already scored per player (e.g. `"0,1,2"`). */
+  /** During music bingo: scored row/column keys (e.g. `"0,1,2"`) plus optional `"full"` for the blackout bonus. */
   bingoClaimedLineKeysByPlayer: Record<string, string[]>;
   /** During team trivia: `playerId` → `questionId` → chosen option index (0–3). */
   triviaVotesByPlayer: Record<string, Record<string, number>>;

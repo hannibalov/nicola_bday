@@ -12,8 +12,10 @@ import {
 } from "@/types";
 import { GAMES } from "./gameConfig";
 import {
-  BINGO_POINTS_PER_LINE,
+  BINGO_FULL_CARD_CLAIM_KEY,
+  BINGO_POINTS_FULL_CARD,
   BINGO_VALID_LINE_KEYS,
+  bingoPointsForValidLineKey,
 } from "./bingoLine";
 import { sortLeaderboardEntries } from "./leaderboardSort";
 import { notifySessionChanged } from "./sessionNotify";
@@ -358,8 +360,8 @@ export type BingoClaimResult = {
 };
 
 /**
- * Awards points for newly completed bingo lines (honor system; line keys must be valid).
- * Ignores keys already claimed for this player or invalid keys.
+ * Awards points for newly completed bingo rows/columns and optional full-card bonus
+ * (honor system; geometric line keys must be valid).
  */
 export function claimBingo(
   playerId: string,
@@ -370,15 +372,20 @@ export function claimBingo(
   if (!state.players.some((p) => p.id === playerId)) return null;
 
   const unique = [...new Set(lineKeys)];
-  const validNew = unique.filter(
-    (k) => BINGO_VALID_LINE_KEYS.has(k) && !(state.bingoClaimedLineKeysByPlayer[playerId] ?? []).includes(k)
+  const priorClaimed = state.bingoClaimedLineKeysByPlayer[playerId] ?? [];
+  const validNewLines = unique.filter(
+    (k) => BINGO_VALID_LINE_KEYS.has(k) && !priorClaimed.includes(k)
   );
-  if (validNew.length === 0) {
+  const fullNew =
+    unique.includes(BINGO_FULL_CARD_CLAIM_KEY) &&
+    !priorClaimed.includes(BINGO_FULL_CARD_CLAIM_KEY);
+
+  if (validNewLines.length === 0 && !fullNew) {
     const cur = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
     return {
       awarded: 0,
       totalForPlayer: cur,
-      claimedLineKeys: [...(state.bingoClaimedLineKeysByPlayer[playerId] ?? [])],
+      claimedLineKeys: [...priorClaimed],
     };
   }
 
@@ -386,11 +393,16 @@ export function claimBingo(
     state.gameScores[BINGO_GAME_ID] = {};
   }
   const prev = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
-  const delta = validNew.length * BINGO_POINTS_PER_LINE;
+  const lineDelta = validNewLines.reduce(
+    (sum, k) => sum + bingoPointsForValidLineKey(k),
+    0
+  );
+  const delta = lineDelta + (fullNew ? BINGO_POINTS_FULL_CARD : 0);
   state.gameScores[BINGO_GAME_ID]![playerId] = prev + delta;
   state.bingoClaimedLineKeysByPlayer[playerId] = [
-    ...(state.bingoClaimedLineKeysByPlayer[playerId] ?? []),
-    ...validNew,
+    ...priorClaimed,
+    ...validNewLines,
+    ...(fullNew ? [BINGO_FULL_CARD_CLAIM_KEY] : []),
   ];
   state.revision += 1;
   notifySessionChanged();

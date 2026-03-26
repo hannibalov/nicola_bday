@@ -81,7 +81,7 @@ Do **not** duplicate the four-answer question layout. **Extend** (or add first) 
 - [ ] **Red-green-refactor** for scoring and majority logic before UI polish.
 - [ ] **`yarn lint`** passes.
 - [ ] MCQ UI and majority explainer **shared** with identify-quote where applicable (no second copy-paste screen).
-- [ ] 10 questions, 4 options, correct answers graded via **majority within team**.
+- [ ] 20 questions, 4 options, correct answers graded via **majority within team**.
 - [ ] **50** points per correct question per player on qualifying teams.
 - [ ] Instructions / rules copy matches the trivia product spec and shared lobby patterns.
 - [ ] Offline-friendly: localStorage records choices; resync when online.

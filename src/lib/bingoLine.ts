@@ -4,7 +4,13 @@
  * [3,4,5]
  */
 
-export const BINGO_POINTS_PER_LINE = 500;
+/** Row lines are harder (3 songs); columns are 2 songs; full card is a one-time jackpot. */
+export const BINGO_POINTS_ROW = 100;
+export const BINGO_POINTS_COLUMN = 50;
+export const BINGO_POINTS_FULL_CARD = 500;
+
+/** Sentinel stored in `bingoClaimedLineKeysByPlayer` (not a geometric line). */
+export const BINGO_FULL_CARD_CLAIM_KEY = "full";
 
 export const BINGO_ROWS = 2;
 export const BINGO_COLS = 3;
@@ -21,6 +27,15 @@ export const BINGO_WIN_LINES: ReadonlyArray<readonly number[]> = [
 
 export function bingoLineKey(line: readonly number[]): string {
   return line.join(",");
+}
+
+const BINGO_ROW_LINE_KEYS: ReadonlySet<string> = new Set([
+  bingoLineKey([0, 1, 2]),
+  bingoLineKey([3, 4, 5]),
+]);
+
+export function bingoPointsForValidLineKey(lineKey: string): number {
+  return BINGO_ROW_LINE_KEYS.has(lineKey) ? BINGO_POINTS_ROW : BINGO_POINTS_COLUMN;
 }
 
 export const BINGO_VALID_LINE_KEYS: ReadonlySet<string> = new Set(

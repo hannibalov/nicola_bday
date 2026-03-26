@@ -14,6 +14,7 @@ import { bingoCardTitlesForPlayer, bingoSeedForPlayer } from "@/lib/bingoCard";
 import {
   BINGO_CELL_COUNT,
   BINGO_COLS,
+  BINGO_FULL_CARD_CLAIM_KEY,
   completedBingoLineKeys,
 } from "@/lib/bingoLine";
 import {
@@ -106,7 +107,11 @@ export default function MusicBingoScreen({
   const newLineKeys = useMemo(() => {
     const completed = completedBingoLineKeys(markedToIndices(marked));
     const claimed = new Set(serverClaimedLineKeys);
-    return completed.filter((k) => !claimed.has(k));
+    const lines = completed.filter((k) => !claimed.has(k));
+    const allMarked = marked.every(Boolean);
+    const fullPending =
+      allMarked && !claimed.has(BINGO_FULL_CARD_CLAIM_KEY);
+    return [...lines, ...(fullPending ? [BINGO_FULL_CARD_CLAIM_KEY] : [])];
   }, [marked, serverClaimedLineKeys]);
 
   const toggleCell = useCallback((index: number) => {
@@ -154,6 +159,10 @@ export default function MusicBingoScreen({
   }
 
   const canClaim = newLineKeys.length > 0 && !submitting;
+  const allMarked = marked.every(Boolean);
+  const fullClaimed = serverClaimedLineKeys.includes(BINGO_FULL_CARD_CLAIM_KEY);
+  const hasCompletedLine =
+    completedBingoLineKeys(markedToIndices(marked)).length > 0;
 
   return (
     <div
@@ -187,9 +196,11 @@ export default function MusicBingoScreen({
           Music bingo
         </h1>
         <p className="mt-3 max-w-md text-base leading-relaxed text-[#605b50]">
-          Tap a tile when you hear that song in the room. Complete any full row
-          or column, then call bingo to bank{" "}
-          <span className="font-bold text-[#a33700]">500 pts</span> per new line.
+          Tap a tile when you hear that song in the room. Bank a column for{" "}
+          <span className="font-bold text-[#a33700]">50 pts</span>, a row for{" "}
+          <span className="font-bold text-[#a33700]">100 pts</span>, and a one-time{" "}
+          <span className="font-bold text-[#a33700]">500 pts</span> when the whole
+          card is filled — call bingo to score each time.
         </p>
         <p
           className="mt-4 text-sm font-bold text-[#0e666a]"
@@ -252,9 +263,11 @@ export default function MusicBingoScreen({
         </PrimaryActionButton>
         {!canClaim && !submitting ? (
           <p className="mt-3 text-center text-xs text-[#605b50]">
-            {newLineKeys.length === 0 && completedBingoLineKeys(markedToIndices(marked)).length > 0
-              ? "Those lines are already banked — keep listening for another."
-              : "Mark a full row or column, then tap to bank your points."}
+            {newLineKeys.length === 0 && allMarked && fullClaimed
+              ? "You’ve banked every line and the full card."
+              : newLineKeys.length === 0 && hasCompletedLine
+                ? "Those lines are already banked — keep listening for another."
+                : "Mark tiles until a row, column, or full card is ready to bank."}
           </p>
         ) : null}
       </div>

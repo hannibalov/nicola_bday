@@ -74,7 +74,7 @@ describe("POST /api/game/bingo/claim", () => {
     );
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.awarded).toBe(500);
-    expect(data.totalForPlayer).toBe(500);
+    expect(data.awarded).toBe(100);
+    expect(data.totalForPlayer).toBe(100);
   });
 });

@@ -24,10 +24,10 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 | 1 | Guest check-in | — | Ask for **quirky nicknames**, not real names. |
 | 2 | Party protocol / theme | — | Visible **only after** check-in. |
 | 3 | Lobby (game 1) | Team (trivia) | After 1+2 **and** admin advances to trivia lobby; **instructions** and **roster per team**. |
-| 4 | Game 1: Trivia | Team | Admin starts game. **10** questions, **4** options. Topics: **UK**, **1970s**, **Barcelona**. **50** points per correct answer per question for **each** team member when the team’s **majority** choice is correct. |
+| 4 | Game 1: Trivia | Team | Admin starts game. **20** questions, **4** options. Topics: **UK**, **1970s**, **Barcelona**. **50** points per correct answer per question for **each** team member when the team’s **majority** choice is correct. |
 | 5 | Leaderboard | — | After trivia. |
 | 6 | Lobby (game 2) | Individual | Reuse lobby UI; music bingo copy. |
-| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **30** 1970s songs in pool. **500** points per valid line; `POST /api/game/bingo/claim`. Honor system for marking heard songs. |
+| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **30** 1970s songs in pool. **50** pts per column, **100** per row, **500** once for a full card; `POST /api/game/bingo/claim`. Honor system for marking heard songs. |
 | 8 | Leaderboard | — | After bingo. |
 | 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each, **50** points per correct team answer (same majority rule). |
 | 10 | Leaderboard | — | Final standings (`leaderboard_final`). |
@@ -78,7 +78,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | `GET /api/events` | **SSE** (`text/event-stream`): pushes `revision` + `guestStep` on change; initial event on connect. |
 | `POST /api/game/trivia/vote` | Submit trivia option per question (active in `game_trivia` only). |
 | `POST /api/game/quotes/vote` | Submit quote option per question (active in `game_quotes` only). |
-| `POST /api/game/bingo/claim` | Claim completed line keys; awards **500** points per new valid line. |
+| `POST /api/game/bingo/claim` | Claim completed line keys + optional full card; awards **50** / **100** / **500** per new column / row / full card. |
 | `GET /api/admin/state` | Full **`SessionState`** if `x-admin-key` matches `ADMIN_SECRET`. |
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
@@ -95,7 +95,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 - **Games:** `src/lib/gameConfig.ts` — three games: team trivia, music bingo, team quotes (`GAMES[0]…[2]`).
 - **Scoring:**
   - Trivia & quotes: `computeTriviaScoresFromVotes` + `majorityVote` / `teamChoiceMatchesCorrect` — **50** points per question when the team majority matches `correctIndex`; plurality tie-break uses **lower option index** (`pluralityWinner`).
-  - Bingo: `claimBingo` adds **500** × new valid lines (`BINGO_VALID_LINE_KEYS` on a **2×3** grid).
+  - Bingo: `claimBingo` adds **50** per new column line, **100** per new row, **500** once for key `full` (entire card marked).
   - Round scores persisted when entering each leaderboard / final step via `recordRoundScoresForCompletedGame`.
 - **Revision:** Incremented on advancing step and on bingo claims; exposed to clients for sync.
 - **Countdown:** `countdownRemaining` is set when **entering** a `countdown_*` step; the **UI** (`CountdownScreen`) runs a local ticking timer. The server does **not** auto-advance when it hits zero — the **host** advances to the game step. (Product copy can still say “get ready”; technically it is host-gated.)
@@ -104,7 +104,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 
 | Content | Location |
 |---------|----------|
-| Trivia (10 × 4 options, topics UK / 1970s / Barcelona) | `src/content/trivia.ts` |
+| Trivia (20 × 4 options, topics UK / 1970s / Barcelona) | `src/content/trivia.ts` |
 | Bingo pool (30 titles) | `src/content/bingo.ts`; card seeded per player in `MusicBingoScreen` + `bingoCard.ts` |
 | Quotes (N × 4 from JSON) | `src/lib/content/quoteQuestions.json` + `quoteContent.ts` |
 

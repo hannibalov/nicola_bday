@@ -319,7 +319,7 @@ describe("store", () => {
       claimBingo(id, ["0,1,2"]);
       const pub = getPublicState(id);
       expect(pub.myBingoClaimedLineKeys).toContain("0,1,2");
-      expect(pub.myBingoScore).toBe(500);
+      expect(pub.myBingoScore).toBe(100);
     });
   });
 
@@ -338,13 +338,15 @@ describe("store", () => {
       expect(claimBingo(id, ["0,1,2"])).toBeNull();
     });
 
-    it("awards 500 per new valid line", () => {
+    it("awards 100 for a new row and 50 for a new column", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
-      const r = claimBingo(id, ["0,1,2"]);
-      expect(r?.awarded).toBe(500);
-      expect(r?.totalForPlayer).toBe(500);
-      expect(r?.claimedLineKeys).toContain("0,1,2");
+      const topRow = claimBingo(id, ["0,1,2"]);
+      expect(topRow?.awarded).toBe(100);
+      expect(topRow?.totalForPlayer).toBe(100);
+      const col = claimBingo(id, ["0,3"]);
+      expect(col?.awarded).toBe(50);
+      expect(col?.totalForPlayer).toBe(150);
       expect(claimBingo(id, ["0,1,2"])?.awarded).toBe(0);
     });
 
@@ -352,8 +354,26 @@ describe("store", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
       const r = claimBingo(id, ["0,1,2", "3,4,5"]);
-      expect(r?.awarded).toBe(1000);
-      expect(r?.totalForPlayer).toBe(1000);
+      expect(r?.awarded).toBe(200);
+      expect(r?.totalForPlayer).toBe(200);
+    });
+
+    it("awards 500 once for the full-card key", () => {
+      const id = registerPlayer("A");
+      advanceUntil("game_bingo");
+      const r = claimBingo(id, ["full"]);
+      expect(r?.awarded).toBe(500);
+      expect(r?.totalForPlayer).toBe(500);
+      expect(r?.claimedLineKeys).toContain("full");
+      expect(claimBingo(id, ["full"])?.awarded).toBe(0);
+    });
+
+    it("combines lines and full-card points in one claim", () => {
+      const id = registerPlayer("A");
+      advanceUntil("game_bingo");
+      const r = claimBingo(id, ["0,1,2", "3,4,5", "0,3", "1,4", "2,5", "full"]);
+      expect(r?.awarded).toBe(850);
+      expect(r?.totalForPlayer).toBe(850);
     });
 
     it("ignores invalid line keys", () => {
@@ -369,7 +389,7 @@ describe("store", () => {
       advancePhase();
       expect(getSessionState().guestStep).toBe("leaderboard_post_bingo");
       const board = getSessionState().gameScores[GAMES[1].id]!;
-      expect(board[id]).toBe(500);
+      expect(board[id]).toBe(100);
     });
   });
 

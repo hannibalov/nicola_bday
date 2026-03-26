@@ -248,10 +248,10 @@ export default function LobbyScreen({
             </p>
             <p className="mt-3 text-center text-xs font-medium text-white/85">
               {variant === "trivia"
-                ? "UK · Barcelona · 1970s threads — 10 questions, 50 pts each."
+                ? "UK · Barcelona · 1970s threads — 20 questions, 50 pts each."
                 : variant === "identify_quote"
                   ? `${QUOTE_ROUND_COUNT} quotes, four choices — your team’s majority locks the answer.`
-                  : "2×3 card, 30 classic titles in the pool — 500 pts per bingo line."}
+                  : "2×3 card, 30 classic titles — 50 pts per column, 100 per row, 500 for a full card."}
             </p>
           </div>
         </div>

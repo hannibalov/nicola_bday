@@ -1,6 +1,9 @@
 import {
+  BINGO_POINTS_COLUMN,
+  BINGO_POINTS_ROW,
   BINGO_VALID_LINE_KEYS,
   bingoLineKey,
+  bingoPointsForValidLineKey,
   completedBingoLineKeys,
   hasCompleteBingoLine,
 } from "./bingoLine";
@@ -26,6 +29,16 @@ describe("hasCompleteBingoLine", () => {
 
   it("is false for diagonal-only partial", () => {
     expect(hasCompleteBingoLine([0, 4])).toBe(false);
+  });
+});
+
+describe("bingoPointsForValidLineKey", () => {
+  it("scores rows higher than columns", () => {
+    expect(bingoPointsForValidLineKey("0,1,2")).toBe(BINGO_POINTS_ROW);
+    expect(bingoPointsForValidLineKey("3,4,5")).toBe(BINGO_POINTS_ROW);
+    expect(bingoPointsForValidLineKey("0,3")).toBe(BINGO_POINTS_COLUMN);
+    expect(bingoPointsForValidLineKey("1,4")).toBe(BINGO_POINTS_COLUMN);
+    expect(bingoPointsForValidLineKey("2,5")).toBe(BINGO_POINTS_COLUMN);
   });
 });
 
