@@ -68,9 +68,14 @@ describe("PartyProtocolScreen", () => {
         onCompleted={jest.fn()}
       />
     );
-    const title = screen.getByRole("heading", { level: 1 });
-    expect(title).toHaveTextContent("Party");
-    expect(title).toHaveTextContent("protocol");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      /welcome to nicola/i
+    );
+    const protocolTitle = screen.getByRole("heading", {
+      level: 2,
+      name: /party[\s\n]*protocol/i,
+    });
+    expect(protocolTitle).toBeInTheDocument();
     expect(screen.getByText(/date & place/i)).toBeInTheDocument();
     expect(screen.getByTestId("party-maps-link")).toHaveAttribute(
       "href",

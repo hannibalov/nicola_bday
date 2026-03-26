@@ -80,24 +80,47 @@ export default function PartyProtocolScreen({
 
       <header className="relative z-10 mb-10">
         <p
-          className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
+          className="mb-3 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
           style={{ fontFamily: fontHeadline }}
         >
-          {preCheckIn ? "First things first" : "You’re checked in"}
+          Welcome
         </p>
         <h1
-          className="text-5xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-6xl"
+          className="text-4xl font-black uppercase italic leading-[0.95] tracking-tighter text-[#322e25] sm:text-5xl"
           style={{ fontFamily: fontHeadline }}
         >
-          Party
+          Welcome to Nicola&apos;s
           <br />
-          <span className="text-[#ff7943]">protocol</span>
+          <span className="text-[#ff7943]">bash</span>
         </h1>
-        <div className="mt-6 flex items-center gap-4">
-          <div className="h-0.5 w-12 bg-[#b50552]" aria-hidden />
-          <p className="text-xs font-bold uppercase tracking-widest text-[#605b50]">
-            How tonight works
+        <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[#605b50]">
+          This is the party app for Nicola&apos;s birthday — trivia, music bingo,
+          and team games on your phone, in sync when the host advances the night.
+          Everything below is the rundown: where we meet, the countdown, and how
+          to play along.
+        </p>
+
+        <div className="mt-10 border-t border-[#322e25]/15 pt-10">
+          <p
+            className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-[#a33700]"
+            style={{ fontFamily: fontHeadline }}
+          >
+            {preCheckIn ? "First things first" : "You’re checked in"}
           </p>
+          <h2
+            className="text-5xl font-black uppercase italic leading-[0.9] tracking-tighter text-[#322e25] sm:text-6xl"
+            style={{ fontFamily: fontHeadline }}
+          >
+            Party
+            <br />
+            <span className="text-[#ff7943]">protocol</span>
+          </h2>
+          <div className="mt-6 flex items-center gap-4">
+            <div className="h-0.5 w-12 bg-[#b50552]" aria-hidden />
+            <p className="text-xs font-bold uppercase tracking-widest text-[#605b50]">
+              How tonight works
+            </p>
+          </div>
         </div>
       </header>
 
