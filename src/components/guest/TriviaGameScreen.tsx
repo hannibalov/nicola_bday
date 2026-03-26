@@ -69,12 +69,12 @@ export default function TriviaGameScreen({
     });
   }, [serverMyVotes]);
 
-  const q = useMemo(() => {
-    if (!teamMcqSync) return null;
-    return TRIVIA_QUESTIONS[teamMcqSync.questionIndex] ?? null;
-  }, [teamMcqSync]);
+  const { phase, secondsLeft, activeSync } = useTeamMcqRoundPhase(teamMcqSync);
 
-  const { phase, secondsLeft } = useTeamMcqRoundPhase(teamMcqSync);
+  const q = useMemo(() => {
+    if (!activeSync) return null;
+    return TRIVIA_QUESTIONS[activeSync.questionIndex] ?? null;
+  }, [activeSync]);
 
   const canAnswer = phase === "answering";
   const showReveal =
@@ -97,7 +97,7 @@ export default function TriviaGameScreen({
   const revealCorrectIndex =
     showReveal && q ? q.correctIndex : null;
 
-  if (!teamMcqSync || !q) {
+  if (!teamMcqSync || !activeSync || !q) {
     return null;
   }
 
@@ -140,7 +140,7 @@ export default function TriviaGameScreen({
         <div className="mt-5 space-y-3">
           <McqRoundCountdownBar phase={phase} secondsLeft={secondsLeft} />
           <QuestionProgress
-            current={teamMcqSync.questionIndex + 1}
+            current={activeSync.questionIndex + 1}
             total={total}
             label="Question"
             variant="bar"

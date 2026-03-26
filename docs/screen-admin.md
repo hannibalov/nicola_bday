@@ -1,7 +1,7 @@
 # Screen: Admin panel
 
 **Audience:** Implementation agent (UI + APIs + optional SSE broadcast).  
-**Route:** `/admin` (`src/app/admin/page.tsx`, `src/components/AdminPanel.tsx`).
+**Route:** `/admin` (`src/app/admin/page.tsx`, `src/components/admin/AdminPanel.tsx`).
 
 **Process:** **TDD**, then **`yarn lint`** — [§11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint).
 
@@ -66,7 +66,7 @@ Host-only control surface (protected by shared **secret**, not user accounts). S
 
 ## Files likely touched
 
-- `src/components/AdminPanel.tsx`
+- `src/components/admin/AdminPanel.tsx`
 - `src/app/api/admin/start-next/route.ts` — may accept **action** body instead of single advance
 - New `src/app/api/events/route.ts` (SSE) + publisher hook from advance
 - `src/lib/store.ts` — richer step machine

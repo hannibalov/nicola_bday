@@ -1,4 +1,4 @@
-import GuestPlayShell from "./GuestPlayShell";
+import GuestPlayShell from "@/components/layout/GuestPlayShell";
 
 interface WaitingLobbyProps {
   title?: string;

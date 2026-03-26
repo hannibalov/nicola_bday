@@ -72,8 +72,8 @@ Today `getPublicState` only exposes the **current player’s** team and teammate
 
 ## Files likely touched
 
-- New `src/components/LobbyScreen.tsx` (or split thin wrappers)
-- `src/components/PlayView.tsx` — map new server phase/step to `LobbyScreen`
+- New `src/components/guest/LobbyScreen.tsx` (or split thin wrappers)
+- `src/components/guest/PlayView.tsx` — map new server phase/step to `LobbyScreen`
 - `src/lib/store.ts` / `src/types/index.ts` — extend public payload for full team roster
 - `src/app/api/state/route.ts` — pass extended state
 

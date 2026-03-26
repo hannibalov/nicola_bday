@@ -1,7 +1,7 @@
 # Screen: Guest check-in
 
 **Audience:** Implementation agent (UI + client gating + API hook).  
-**Route today:** `/` (`src/app/page.tsx` + `src/components/NicknameForm.tsx`).
+**Route today:** `/` (`src/app/page.tsx` + `src/components/guest/GuestEntryFlow.tsx` → `NicknameForm`).
 
 **Process:** **TDD**, then **`yarn lint`** — [ARCHITECTURE.md §11](./ARCHITECTURE.md#tdd), [§12](./ARCHITECTURE.md#lint).
 
@@ -60,7 +60,7 @@ First screen for guests. Collect a **quirky nickname** explicitly **not** a real
 
 ## Files likely touched
 
-- `src/components/NicknameForm.tsx`
+- `src/components/guest/NicknameForm.tsx`
 - `src/app/page.tsx` (wrap / layout only if needed)
 - Optional: small `src/lib/clientStorage.ts` helper
 

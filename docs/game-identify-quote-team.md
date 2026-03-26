@@ -82,10 +82,10 @@ Use the **same** `MultipleChoicePanel`, `TeamMajorityExplainer`, `QuestionProgre
 
 ## Files likely touched
 
-- New `src/components/IdentifyQuoteGameScreen.tsx`
+- New `src/components/guest/IdentifyQuoteGameScreen.tsx`
 - `src/lib/store.ts` — `teamsTrivia` vs `teamsQuotes` or reset teams with phase
 - Vote API (can share trivia vote handler with `gameType` param)
-- `src/components/PlayView.tsx`
+- `src/components/guest/PlayView.tsx`
 
 ---
 

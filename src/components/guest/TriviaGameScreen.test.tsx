@@ -1,18 +1,23 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import TriviaGameScreen from "./TriviaGameScreen";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 import type { TeamMcqPublicSync } from "@/types";
 
-function syncAtQuestion(i: number): TeamMcqPublicSync {
+const TRIVIA_T0 = 12_000_000;
+
+function syncAtQuestion(
+  i: number,
+  opts?: { roundStartedAtEpochMs?: number; answerMs?: number; revealMs?: number }
+): TeamMcqPublicSync {
   return {
     questionIndex: i,
-    roundStartedAtEpochMs: Date.now(),
+    roundStartedAtEpochMs: opts?.roundStartedAtEpochMs ?? Date.now(),
     totalQuestions: TRIVIA_QUESTIONS.length,
-    answerMs: 10_000,
-    revealMs: 3_000,
+    answerMs: opts?.answerMs ?? 10_000,
+    revealMs: opts?.revealMs ?? 3_000,
   };
 }
 
@@ -25,6 +30,10 @@ describe("TriviaGameScreen", () => {
         json: async () => ({ ok: true }),
       } as Response)
     );
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("submits a vote when an option is selected", async () => {
@@ -56,5 +65,50 @@ describe("TriviaGameScreen", () => {
       <TriviaGameScreen teamMcqSync={syncAtQuestion(0)} serverMyVotes={{}} />
     );
     expect(screen.getByTestId("mcq-round-countdown")).toBeInTheDocument();
+  });
+
+  it("shows the next question after reveal without a new teamMcqSync from the server", async () => {
+    jest.useFakeTimers({ now: TRIVIA_T0 });
+    const answerMs = 500;
+    const revealMs = 250;
+    const cycle = answerMs + revealMs;
+
+    render(
+      <TriviaGameScreen
+        teamMcqSync={syncAtQuestion(0, {
+          roundStartedAtEpochMs: TRIVIA_T0,
+          answerMs,
+          revealMs,
+        })}
+        serverMyVotes={{}}
+      />
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: TRIVIA_QUESTIONS[0].prompt,
+      })
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      jest.setSystemTime(TRIVIA_T0 + cycle + 100);
+      jest.advanceTimersByTime(300);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", {
+          level: 2,
+          name: TRIVIA_QUESTIONS[1].prompt,
+        })
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("heading", {
+        level: 2,
+        name: TRIVIA_QUESTIONS[0].prompt,
+      })
+    ).not.toBeInTheDocument();
   });
 });

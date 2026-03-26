@@ -3,8 +3,8 @@
 import { startTransition, useLayoutEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
-import NicknameForm from "@/components/NicknameForm";
-import PartyProtocolScreen from "@/components/PartyProtocolScreen";
+import NicknameForm from "./NicknameForm";
+import PartyProtocolScreen from "./PartyProtocolScreen";
 import {
   hasCompletedPartyProtocol,
   markPartyProtocolComplete,

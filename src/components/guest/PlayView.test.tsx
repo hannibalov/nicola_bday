@@ -10,7 +10,7 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-jest.mock("./GuestPlayShell", () => ({
+jest.mock("@/components/layout/GuestPlayShell", () => ({
   __esModule: true,
   default: function Shell({ children }: { children: React.ReactNode }) {
     return <div data-test-id="guest-shell">{children}</div>;

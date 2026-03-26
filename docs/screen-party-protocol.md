@@ -61,8 +61,8 @@ For poor connectivity, **Option A + localStorage** is simplest; sync with server
 
 ## Files likely touched
 
-- New component e.g. `src/components/PartyProtocolScreen.tsx`
-- `src/components/PlayPageContent.tsx` (order: protocol before `PlayView` or waiting)
+- New component e.g. `src/components/guest/PartyProtocolScreen.tsx`
+- `src/components/guest/PlayPageContent.tsx` (order: protocol before `PlayView` or waiting)
 - Possibly remove or repurpose `InstructionsScreen.tsx`
 
 ---

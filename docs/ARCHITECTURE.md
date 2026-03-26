@@ -40,7 +40,7 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 
 ## 3. UI and styling
 
-Guest screens are implemented in **`src/components/**`** with **React** and **Tailwind CSS 4** (fonts via `next/font`). There are no separate static HTML design dumps in the repo; treat the live components as the source of truth for layout and visuals.
+Guest screens live under **`src/components/guest/`**, shared chrome under **`src/components/layout/`**, the host panel under **`src/components/admin/`**, and game primitives under **`src/components/game/`**, using **React** and **Tailwind CSS 4** (fonts via `next/font`). There are no separate static HTML design dumps in the repo; treat the live components as the source of truth for layout and visuals.
 
 ---
 
@@ -64,9 +64,10 @@ The repository implements the **full guest sequence** above: real trivia, music 
 
 | Route | Purpose |
 |-------|---------|
-| `/` | `NicknameForm` — quirky-alias copy; `POST /api/players`; persists `playerId` + nickname via `persistPlayerProfile()`; redirects to `/play`. |
-| `/play` | `PlayPageContent` requires persisted `playerId` (cookie and/or localStorage), then `PlayView`. |
-| `/admin` | `AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); SSE + 2s poll fallback; **Start next** and **Reset session**. |
+| `/` | `guest/GuestEntryFlow` → `NicknameForm` — quirky-alias copy; `POST /api/players`; persists `playerId` + nickname via `persistPlayerProfile()`; redirects to `/play`. |
+| `/play` | `guest/PlayPageContent` requires persisted `playerId` (cookie and/or localStorage), then `guest/PlayView`. |
+| `/admin` | `admin/AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); SSE + 2s poll fallback; **Start next** and **Reset session**. |
+| `/join` | Dev/QA shortcut: redirects to `/?protocolTest=1` (unlocks protocol CTA for testing). |
 
 ### 5.2 API
 
@@ -119,14 +120,14 @@ The repository implements the **full guest sequence** above: real trivia, music 
 
 ### 5.6 UI components (high level)
 
-- **`MobileLayout`** / **`GuestPlayShell`** — mobile shells.
-- **`NicknameForm`** — check-in with quirky copy + `PrimaryActionButton`.
-- **`PlayPageContent`** — redirect to `/` if no persisted player id.
-- **`PlayView`** — switches on **`guestStep`**: `PartyProtocolScreen`, `LobbyScreen` (trivia / music_bingo), `CountdownScreen`, `TriviaGameScreen`, `MusicBingoScreen`, `IdentifyQuoteGameScreen`, `GameLeaderboard`, `FinalLeaderboard`, `WaitingLobby`.
-- **`AdminPanel`** — full session dump, next-step preview labels, start-next + reset.
+- **`layout/MobileLayout`** / **`layout/GuestPlayShell`** — mobile shells.
+- **`guest/NicknameForm`** — check-in with quirky copy + `PrimaryActionButton`.
+- **`guest/PlayPageContent`** — redirect to `/` if no persisted player id.
+- **`guest/PlayView`** — switches on **`guestStep`**: `PartyProtocolScreen`, `LobbyScreen` (trivia / music_bingo), `CountdownScreen`, `TriviaGameScreen`, `MusicBingoScreen`, `IdentifyQuoteGameScreen`, `GameLeaderboard`, `FinalLeaderboard`, `WaitingLobby`.
+- **`admin/AdminPanel`** — full session dump, next-step preview labels, start-next + reset.
 - **Shared game UI** under `src/components/game/`: `MultipleChoicePanel`, `QuestionProgress`, `TeamMajorityExplainer`, `PrimaryActionButton`, etc.
 
-**Legacy:** `MockGameScreen.tsx` remains in the repo but is **not** used by `PlayView` (replaced by real game screens).
+**Legacy:** `guest/MockGameScreen.tsx` remains in the repo but is **not** used by `PlayView` (replaced by real game screens).
 
 ---
 
@@ -188,10 +189,11 @@ Trivia TS module, bingo TS array, quotes JSON — all validated / typed in loade
 ```
 src/
   app/
-    page.tsx                    # Guest check-in
+    page.tsx                    # Guest check-in (guest/GuestEntryFlow)
     layout.tsx
-    play/page.tsx               # PlayPageContent → PlayView
-    admin/page.tsx              # AdminPanel
+    join/page.tsx               # redirect → /?protocolTest=1
+    play/page.tsx               # guest/PlayPageContent → guest/PlayView
+    admin/page.tsx              # admin/AdminPanel
     api/
       players/route.ts
       state/route.ts
@@ -205,22 +207,26 @@ src/
         start-next/route.ts
         reset/route.ts
   components/
-    MobileLayout.tsx
-    GuestPlayShell.tsx
-    NicknameForm.tsx
-    PlayPageContent.tsx
-    PlayView.tsx
-    WaitingLobby.tsx
-    PartyProtocolScreen.tsx
-    LobbyScreen.tsx
-    CountdownScreen.tsx
-    TriviaGameScreen.tsx
-    MusicBingoScreen.tsx
-    IdentifyQuoteGameScreen.tsx
-    GameLeaderboard.tsx
-    FinalLeaderboard.tsx
-    AdminPanel.tsx
-    MockGameScreen.tsx          # legacy, unused by PlayView
+    layout/
+      MobileLayout.tsx
+      GuestPlayShell.tsx
+    guest/
+      GuestEntryFlow.tsx        # home: nickname → party protocol
+      NicknameForm.tsx
+      PlayPageContent.tsx
+      PlayView.tsx
+      WaitingLobby.tsx
+      PartyProtocolScreen.tsx
+      LobbyScreen.tsx
+      CountdownScreen.tsx
+      TriviaGameScreen.tsx
+      MusicBingoScreen.tsx
+      IdentifyQuoteGameScreen.tsx
+      GameLeaderboard.tsx
+      FinalLeaderboard.tsx
+      MockGameScreen.tsx        # legacy, unused by PlayView
+    admin/
+      AdminPanel.tsx
     game/
       MultipleChoicePanel.tsx
       QuestionProgress.tsx
@@ -335,23 +341,23 @@ After **`yarn test`** passes, **`yarn lint`** must pass with **no errors** (and 
 
 ## 13. Shared components & reuse (games and screens)
 
-Goal: **one implementation** for patterns that appear on multiple flows. Game-specific screens stay **thin**; primitives live under `src/components/game/` and shared screens at `src/components/` root where appropriate.
+Goal: **one implementation** for patterns that appear on multiple flows. Game-specific screens under `src/components/guest/` stay **thin**; primitives live under `src/components/game/`; layout chrome under `src/components/layout/`.
 
 ### 13.1 In the repo (use and extend)
 
 | Piece | Path | Reuse |
 |-------|------|--------|
-| Mobile shell | `MobileLayout.tsx`, `GuestPlayShell.tsx` | Guest full-screen chrome. |
-| Play orchestration | `PlayView.tsx` | Single place for fetch + SSE + `guestStep` routing. |
-| Party protocol | `PartyProtocolScreen.tsx` | Post-check-in theme/rules. |
-| Lobby | `LobbyScreen.tsx` | `variant`: `trivia` \| `music_bingo`; trivia shows `teams` roster. |
-| Countdown | `CountdownScreen.tsx` | Game name, team list, local timer display. |
-| Trivia / quotes | `TriviaGameScreen.tsx`, `IdentifyQuoteGameScreen.tsx` | MCQ flows using shared game components. |
-| Bingo | `MusicBingoScreen.tsx` | 2×3 grid + `bingoCard` / `bingoLine` helpers. |
-| Mid-event leaderboard | `GameLeaderboard.tsx` | Per-round scores (`individual` \| `team`). |
-| Final totals | `FinalLeaderboard.tsx` | Cumulative standings. |
-| Waiting copy | `WaitingLobby.tsx` | Host-driven waits. |
-| Check-in | `NicknameForm.tsx` | Quirky alias + API register. |
+| Mobile shell | `layout/MobileLayout.tsx`, `layout/GuestPlayShell.tsx` | Guest full-screen chrome. |
+| Play orchestration | `guest/PlayView.tsx` | Single place for fetch + SSE + `guestStep` routing. |
+| Party protocol | `guest/PartyProtocolScreen.tsx` | Post-check-in theme/rules. |
+| Lobby | `guest/LobbyScreen.tsx` | `variant`: `trivia` \| `music_bingo`; trivia shows `teams` roster. |
+| Countdown | `guest/CountdownScreen.tsx` | Game name, team list, local timer display. |
+| Trivia / quotes | `guest/TriviaGameScreen.tsx`, `guest/IdentifyQuoteGameScreen.tsx` | MCQ flows using shared game components. |
+| Bingo | `guest/MusicBingoScreen.tsx` | 2×3 grid + `bingoCard` / `bingoLine` helpers. |
+| Mid-event leaderboard | `guest/GameLeaderboard.tsx` | Per-round scores (`individual` \| `team`). |
+| Final totals | `guest/FinalLeaderboard.tsx` | Cumulative standings. |
+| Waiting copy | `guest/WaitingLobby.tsx` | Host-driven waits. |
+| Check-in flow | `guest/GuestEntryFlow.tsx`, `guest/NicknameForm.tsx` | Home route; quirky alias + API register. |
 | MCQ / progress / explainer | `components/game/*` | `MultipleChoicePanel`, `QuestionProgress`, `TeamMajorityExplainer`, `PrimaryActionButton` |
 
 ### 13.2 Domain logic (shared, not UI)
@@ -367,8 +373,10 @@ Goal: **one implementation** for patterns that appear on multiple flows. Game-sp
 
 ```
 src/components/
+  layout/         # MobileLayout, GuestPlayShell
+  guest/          # Check-in, play shell routing, lobbies, games, leaderboards (player-facing)
+  admin/          # AdminPanel
   game/           # MultipleChoicePanel, TeamMajorityExplainer, …
-  … screen components at root (LobbyScreen, PlayView, …)
 ```
 
 **Rule for agents:** Before adding a second copy of “four answers + prompt” or “team voting explainer,” **extend** `src/components/game/`, **add tests**, and import from both games.

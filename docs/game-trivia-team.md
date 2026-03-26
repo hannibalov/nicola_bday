@@ -91,10 +91,10 @@ Do **not** duplicate the four-answer question layout. **Extend** (or add first) 
 
 ## Files likely touched
 
-- New game component, e.g. `src/components/TriviaGameScreen.tsx`
+- New game component, e.g. `src/components/guest/TriviaGameScreen.tsx`
 - `src/lib/store.ts` — voting aggregation, score persistence
 - New API routes e.g. `POST /api/game/trivia/vote` (or generic vote endpoint)
-- `src/components/PlayView.tsx` — render real component for trivia game id
+- `src/components/guest/PlayView.tsx` — render real component for trivia game id
 
 ---
 

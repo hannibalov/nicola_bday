@@ -15,7 +15,7 @@ import {
   hasCompletedPartyProtocol,
   setLastKnownStep,
 } from "@/lib/clientStorage";
-import GuestPlayShell from "./GuestPlayShell";
+import GuestPlayShell from "@/components/layout/GuestPlayShell";
 import WaitingLobby from "./WaitingLobby";
 import MusicBingoScreen from "./MusicBingoScreen";
 import TriviaGameScreen from "./TriviaGameScreen";

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
-import AdminPanel from "@/components/AdminPanel";
-import MobileLayout from "@/components/MobileLayout";
+import AdminPanel from "@/components/admin/AdminPanel";
+import MobileLayout from "@/components/layout/MobileLayout";
 
 const headline = Epilogue({
   subsets: ["latin"],

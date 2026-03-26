@@ -1,20 +1,24 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import IdentifyQuoteGameScreen from "./IdentifyQuoteGameScreen";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import type { TeamMcqPublicSync } from "@/types";
 
 const QUESTIONS = getQuoteQuestions();
+const QUOTE_T0 = 15_000_000;
 
-function syncAtQuestion(i: number): TeamMcqPublicSync {
+function syncAtQuestion(
+  i: number,
+  opts?: { roundStartedAtEpochMs?: number; answerMs?: number; revealMs?: number }
+): TeamMcqPublicSync {
   return {
     questionIndex: i,
-    roundStartedAtEpochMs: Date.now(),
+    roundStartedAtEpochMs: opts?.roundStartedAtEpochMs ?? Date.now(),
     totalQuestions: QUESTIONS.length,
-    answerMs: 10_000,
-    revealMs: 3_000,
+    answerMs: opts?.answerMs ?? 10_000,
+    revealMs: opts?.revealMs ?? 3_000,
   };
 }
 
@@ -23,6 +27,7 @@ describe("IdentifyQuoteGameScreen", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    jest.useRealTimers();
   });
 
   it("submits selected option to the quotes vote API", async () => {
@@ -77,5 +82,41 @@ describe("IdentifyQuoteGameScreen", () => {
       />
     );
     expect(screen.getByText(QUESTIONS[1].quote, { exact: false })).toBeInTheDocument();
+  });
+
+  it("advances to the next quote after reveal without new server sync props", async () => {
+    jest.useFakeTimers({ now: QUOTE_T0 });
+    const answerMs = 500;
+    const revealMs = 250;
+    const cycle = answerMs + revealMs;
+
+    render(
+      <IdentifyQuoteGameScreen
+        teamMcqSync={syncAtQuestion(0, {
+          roundStartedAtEpochMs: QUOTE_T0,
+          answerMs,
+          revealMs,
+        })}
+        serverQuoteVotes={{}}
+      />
+    );
+
+    expect(
+      screen.getByText(QUESTIONS[0].quote, { exact: false })
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      jest.setSystemTime(QUOTE_T0 + cycle + 100);
+      jest.advanceTimersByTime(300);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(QUESTIONS[1].quote, { exact: false })
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(QUESTIONS[0].quote, { exact: false })
+    ).not.toBeInTheDocument();
   });
 });

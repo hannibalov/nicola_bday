@@ -27,7 +27,7 @@ Show standings **after** a game completes, before the next lobby or the final wr
 
 ## Current implementation
 
-- `src/components/GameLeaderboard.tsx` — takes `gameName`, `entries: { name, score }[]`, `type: 'individual' | 'team'`.
+- `src/components/guest/GameLeaderboard.tsx` — takes `gameName`, `entries: { name, score }[]`, `type: 'individual' | 'team'`.
 - Shown when server `phase === 'leaderboard'` in `PlayView`.
 - Scores come from `getLeaderboardForCurrentGame()` reading `gameScores` filled by **mock** logic.
 
@@ -64,10 +64,10 @@ Show standings **after** a game completes, before the next lobby or the final wr
 
 ## Files likely touched
 
-- `src/components/GameLeaderboard.tsx`
-- `src/components/FinalLeaderboard.tsx` (if final vs intermediate differ)
+- `src/components/guest/GameLeaderboard.tsx`
+- `src/components/guest/FinalLeaderboard.tsx` (if final vs intermediate differ)
 - `src/lib/store.ts` — scoring and aggregation
-- `src/components/PlayView.tsx` — when to show intermediate vs final
+- `src/components/guest/PlayView.tsx` — when to show intermediate vs final
 
 ---
 

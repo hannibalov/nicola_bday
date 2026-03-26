@@ -1,6 +1,6 @@
 import { Suspense } from "react";
-import MobileLayout from "@/components/MobileLayout";
-import GuestEntryFlow from "@/components/GuestEntryFlow";
+import MobileLayout from "@/components/layout/MobileLayout";
+import GuestEntryFlow from "@/components/guest/GuestEntryFlow";
 
 export default function Home() {
   return (

@@ -52,6 +52,33 @@ describe("LobbyScreen", () => {
         screen.getByText(/teams will appear|no teams|waiting/i, { exact: false })
       ).toBeInTheDocument();
     });
+
+    it("does not show the removed standby footer CTA or helper copy", () => {
+      render(
+        <LobbyScreen
+          variant="trivia"
+          teams={[]}
+          playerCount={2}
+          scheduledGameStartsAtEpochMs={null}
+        />
+      );
+      expect(
+        screen.queryByRole("button", { name: /stay on this screen/i })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /standing by for host/i })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          /the game opens automatically when the timer finishes/i
+        )
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          /your screen updates when the host starts the countdown/i
+        )
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe("music_bingo variant", () => {
@@ -85,6 +112,20 @@ describe("LobbyScreen", () => {
         />
       );
       expect(screen.getAllByText(/1970s|’70s/i).length).toBeGreaterThan(0);
+    });
+
+    it("does not show the removed standby footer CTA during countdown", () => {
+      const future = Date.now() + 120_000;
+      render(
+        <LobbyScreen
+          variant="music_bingo"
+          playerCount={3}
+          scheduledGameStartsAtEpochMs={future}
+        />
+      );
+      expect(
+        screen.queryByRole("button", { name: /stay on this screen/i })
+      ).not.toBeInTheDocument();
     });
   });
 });

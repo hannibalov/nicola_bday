@@ -74,7 +74,7 @@ Prefer **`GameScreenHeader`** / primary CTA components if present; do **not** re
 
 ## Files likely touched
 
-- New `src/components/MusicBingoScreen.tsx`
+- New `src/components/guest/MusicBingoScreen.tsx`
 - `src/lib/store.ts` — add player score update API
 - Optional `POST /api/game/bingo/claim`
 

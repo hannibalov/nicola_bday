@@ -1,5 +1,5 @@
-import MobileLayout from "@/components/MobileLayout";
-import PlayPageContent from "@/components/PlayPageContent";
+import MobileLayout from "@/components/layout/MobileLayout";
+import PlayPageContent from "@/components/guest/PlayPageContent";
 
 export default function PlayPage() {
   return (

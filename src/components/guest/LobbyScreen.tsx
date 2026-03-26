@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
-import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 import type { LobbyTeamRoster } from "@/types";
 import {
   LOBBY_COUNTDOWN_SECONDS,
@@ -328,28 +327,6 @@ export default function LobbyScreen({
           )}
         </section>
       ) : null}
-
-      <section className="relative z-10 mt-10 space-y-4">
-        <PrimaryActionButton
-          type="button"
-          variant="gradient"
-          disabled
-          aria-disabled="true"
-          className="opacity-90"
-        >
-          <span
-            className="text-lg font-black uppercase italic tracking-tighter"
-            style={{ fontFamily: fontHeadline }}
-          >
-            {isCountdownLive ? "Stay on this screen" : "Standing by for host"}
-          </span>
-        </PrimaryActionButton>
-        <p className="text-center text-[10px] font-bold uppercase tracking-[0.2em] text-[#605b50]">
-          {isCountdownLive
-            ? "The game opens automatically when the timer finishes."
-            : "Your screen updates when the host starts the countdown."}
-        </p>
-      </section>
     </div>
   );
 }
