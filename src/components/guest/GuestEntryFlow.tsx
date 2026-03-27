@@ -1,7 +1,12 @@
 "use client";
 
-import { startTransition, useLayoutEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import {
+  startTransition,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import NicknameForm from "./NicknameForm";
 import PartyProtocolScreen from "./PartyProtocolScreen";
@@ -24,6 +29,7 @@ const body = Be_Vietnam_Pro({
 });
 
 export default function GuestEntryFlow() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [showCheckIn, setShowCheckIn] = useState(false);
   const bypass = isProtocolGateBypassed(
@@ -36,6 +42,11 @@ export default function GuestEntryFlow() {
       setShowCheckIn(hasCompletedPartyProtocol());
     });
   }, []);
+
+  useEffect(() => {
+    if (!showCheckIn) return;
+    router.prefetch("/play");
+  }, [showCheckIn, router]);
 
   if (!showCheckIn) {
     return (

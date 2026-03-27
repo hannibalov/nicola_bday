@@ -187,9 +187,13 @@ The **file layout** in `PLAN.md` is outdated; use [Section 8](#8-repository-map-
 
 The **`GuestStep`** approach ([Section 5.3](#server-state)) is the canonical model going forward. Extending the party (e.g. extra mini-game) means inserting steps into `GUEST_STEP_SEQUENCE` and wiring `PlayView` + transition effects.
 
-### 7.2 Client cache
+### 7.2 Client cache and first-load prefetch
 
 localStorage keys are centralized in `clientStorage.ts`. On load: hydrate from localStorage, then **fetch** `/api/state`; if the server **revision** is ahead, game briefs describe dropping stale local round data.
+
+**Route prefetch:** When the guest reaches the nickname check-in (party protocol already done for this device, or they just completed it on `/`), `GuestEntryFlow` calls `router.prefetch("/play")` so the App Router loads `/play`’s RSC payload and client chunks in the background. That reduces the chance of a heavy download exactly when they tap “Join the party” and helps on congested Wi‑Fi. It does **not** remove the need for `/api/state`, SSE, or vote POSTs during play.
+
+**Production HTTP cache:** [`next.config.ts`](../next.config.ts) sets long-lived `Cache-Control` in **production** only for `/_next/static/*` (immutable, fingerprinted assets) and `/images/*` so repeat visits and reloads reuse JS/CSS/fonts and party images without hammering the origin.
 
 ### 7.3 Server-Sent Events and multi-instance deploys
 

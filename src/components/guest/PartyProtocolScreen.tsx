@@ -209,8 +209,8 @@ export default function PartyProtocolScreen({
             <p className="text-base font-medium leading-relaxed text-[#605b50]">
               We’re meeting at{" "}
               <strong className="text-[#322e25]">Miles</strong> on{" "}
-              <strong className="text-[#322e25]">Carrer de Rocafort</strong> in
-              Barcelona. Tap for walking directions.
+              <strong className="text-[#322e25]">Carrer de la Diputació, 215 </strong> in
+              Barcelona. Tap for directions.
             </p>
             <a
               href={PARTY_MAPS_URL}
@@ -367,7 +367,7 @@ export default function PartyProtocolScreen({
             className="text-xs font-bold uppercase tracking-wide text-[#a33700]"
             data-test-id="protocol-locked-hint"
           >
-            You’ll be able to continue from 11 Apr 2026, 12:01 AM (Barcelona).
+            You’ll be able to continue from 11 April 2026.
           </p>
         )}
         {gateBypass && (

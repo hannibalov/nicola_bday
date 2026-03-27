@@ -23,9 +23,10 @@ First screen for guests. Collect a **quirky nickname** explicitly **not** a real
 
 ## Current implementation
 
+- `GuestEntryFlow` calls **`router.prefetch("/play")`** once the nickname check-in screen is shown (after party protocol is satisfied), so `/play` assets can load before submit.
 - `NicknameForm` posts `{ nickname }` to `POST /api/players`, then `router.push("/play")`.
 - Server sets httpOnly-style cookie via `NextResponse` (see route).
-- **Gap:** No localStorage; placeholder text is generic (“Your nickname”).
+- **`playerId` / nickname** mirror in localStorage via `persistPlayerProfile` (see `clientStorage.ts`).
 
 ---
 
