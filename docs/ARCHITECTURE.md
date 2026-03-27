@@ -32,6 +32,26 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 | 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each, **50** points per correct team answer (same majority rule). |
 | 10 | Leaderboard | — | Final standings (`leaderboard_final`). |
 
+### 2.1 Party protocol — theme & dress (`party_protocol`)
+
+**Theme:** Vice & Vices
+
+> “Reality doesn’t impress me. I believe in intoxication, in ecstasy, and when ordinary life shackles me, I escape, one way or another.” — Anaïs Nin
+
+**Dress prompt:** What’s your reality avoiding indulgence? Dress as your vice…
+
+| Vice     | Suggestion                    |
+|----------|-------------------------------|
+| Lust     | Leather, lace, sexy           |
+| Greed    | Gold chains, cash aesthetic   |
+| Gluttony | Excess & indulgence           |
+| Pride    | Over-the-top glam             |
+| Sloth    | Tracksuit, onesie, PJs        |
+| Envy     | Sneaky, paranoid              |
+| Wrath    | Stern, black, angry           |
+
+**Note:** The theme is a bit of dress-up fun; if it stresses you out, skip it.
+
 **Admin:** Sees connected players and drives the **global step** via **Start next** (and optional **Reset**).
 
 **Implementation mapping:** These steps correspond to `GuestStep` in `src/types/index.ts` (`party_protocol` → … → `leaderboard_final`), not the old `lobby` / `game` / `leaderboard` phase enum from the skeleton plan.

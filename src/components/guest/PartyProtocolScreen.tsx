@@ -265,21 +265,67 @@ export default function PartyProtocolScreen({
 
         <section className="overflow-hidden rounded-xl bg-[#eae2d0]">
           <div className="h-36 bg-gradient-to-br from-[#a33700]/25 via-[#ff7943]/20 to-[#a6eff3]/30" />
-          <div className="space-y-3 p-7">
+          <div className="space-y-4 p-7">
             <p className="text-xs font-bold uppercase tracking-widest text-[#0e666a]">
-              The vibe
+              Theme
             </p>
             <h2
               className="text-2xl font-bold uppercase italic text-[#322e25] sm:text-3xl"
               style={{ fontFamily: fontHeadline }}
             >
-              Nicola’s bash · ’70s & disco energy
+              Vice &amp; Vices
             </h2>
+            <blockquote className="border-l-4 border-[#b50552]/45 pl-4 text-base font-medium italic leading-relaxed text-[#322e25]">
+              &ldquo;Reality doesn&apos;t impress me. I believe in intoxication,
+              in ecstasy, and when ordinary life shackles me, I escape, one way
+              or another.&rdquo;
+              <footer className="mt-3 text-sm font-bold not-italic text-[#605b50]">
+                — Anaïs Nin
+              </footer>
+            </blockquote>
             <p className="text-base font-medium leading-relaxed text-[#605b50]">
+              What&apos;s your reality avoiding indulgence? Dress as your
+              vice….
+            </p>
+            <ul className="space-y-2.5 text-sm font-medium leading-snug text-[#605b50]">
+              <li>
+                <strong className="text-[#322e25]">Lust</strong> — leather,
+                lace, sexy
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Greed</strong> — gold chains,
+                cash aesthetic
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Gluttony</strong> — excess
+                &amp; indulgence
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Pride</strong> — over-the-top
+                glam
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Sloth</strong> — tracksuit,
+                onesie, PJs
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Envy</strong> — sneaky,
+                paranoid
+              </li>
+              <li>
+                <strong className="text-[#322e25]">Wrath</strong> — stern,
+                black, angry
+              </li>
+            </ul>
+            <p className="text-sm font-medium leading-relaxed text-[#605b50]">
               Think bold colours, silly teams, and loud music between rounds.
               Team games use <strong className="text-[#322e25]">majority</strong>{" "}
-              on phones — you’ll match answers with teammates after a short
-              countdown so you know who’s with you.
+              on phones — you&apos;ll match answers with teammates after a short
+              countdown so you know who&apos;s with you.
+            </p>
+            <p className="text-xs font-semibold leading-relaxed text-[#605b50]/90">
+              The theme is a bit of dress-up fun — if it stresses you out, skip
+              it!
             </p>
           </div>
         </section>
