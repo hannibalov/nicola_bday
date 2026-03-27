@@ -1,4 +1,4 @@
-/** 30 well-known 1970s song titles for music bingo pool (product spec). */
+/** 50 well-known 1970s song titles for music bingo pool. */
 
 export const BINGO_SONG_TITLES: string[] = [
   "Bohemian Rhapsody — Queen",
@@ -31,4 +31,24 @@ export const BINGO_SONG_TITLES: string[] = [
   "Listen to the Music — The Doobie Brothers",
   "Roxanne — The Police",
   "Rebel Rebel — David Bowie",
+  "Imagine — John Lennon",
+  "Tiny Dancer — Elton John",
+  "Maggie May — Rod Stewart",
+  "Walk This Way — Aerosmith",
+  "More Than a Feeling — Boston",
+  "Don’t Bring Me Down — Electric Light Orchestra",
+  "The Logical Song — Supertramp",
+  "Comfortably Numb — Pink Floyd",
+  "Somebody to Love — Queen",
+  "Walk on the Wild Side — Lou Reed",
+  "Let It Be — The Beatles",
+  "Signed, Sealed, Delivered I’m Yours — Stevie Wonder",
+  "Black Betty — Ram Jam",
+  "All Right Now — Free",
+  "Kashmir — Led Zeppelin",
+  "Crazy on You — Heart",
+  "Fire and Rain — James Taylor",
+  "You’re the One That I Want — John Travolta & Olivia Newton-John",
+  "Anarchy in the U.K. — Sex Pistols",
+  "Goodbye Yellow Brick Road — Elton John",
 ];

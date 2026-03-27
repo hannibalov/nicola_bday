@@ -27,7 +27,7 @@ Mobile-first web app for a birthday party: **no authentication**, **no database*
 | 4 | Game 1: Trivia | Team | Admin starts game. **20** questions, **4** options. Topics: **UK**, **1970s**, **Barcelona**. **50** points per correct answer per question for **each** team member when the team’s **majority** choice is correct. |
 | 5 | Leaderboard | — | After trivia. |
 | 6 | Lobby (game 2) | Individual | Reuse lobby UI; music bingo copy. |
-| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **30** 1970s songs in pool. **50** pts per column, **100** per row, **500** once for a full card; `POST /api/game/bingo/claim`. Honor system for marking heard songs. |
+| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **50** 1970s songs; host-driven play order + **15 min** auto-finish to leaderboard. **50** / **100** / **500** pts column / row / full card; wrong tile **−5**; `POST /api/game/bingo/mark` + `POST /api/game/bingo/claim`. |
 | 8 | Leaderboard | — | After bingo. |
 | 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each, **50** points per correct team answer (same majority rule). |
 | 10 | Leaderboard | — | Final standings (`leaderboard_final`). |
@@ -74,11 +74,13 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | Method / path | Role |
 |---------------|------|
 | `POST /api/players` | Register nickname; response includes `playerId`; **httpOnly `playerId` cookie** set by server. |
-| `GET /api/state` | **`PublicState`** for the current cookie’s player: `guestStep`, revision, game, teams/lobby, leaderboards, vote snapshots, bingo claim state. |
+| `GET /api/state` | **`PublicState`** for the current cookie’s player: `guestStep`, revision, game, teams/lobby, leaderboards, vote snapshots; during bingo, `myBingoMarkedCells`, `myBingoClaimedLineKeys`, `myBingoScore`, `bingoRoundEndsAtEpochMs`. |
 | `GET /api/events` | **SSE** (`text/event-stream`): pushes `revision` + `guestStep` on change; initial event on connect. |
 | `POST /api/game/trivia/vote` | Submit trivia option per question (active in `game_trivia` only). |
 | `POST /api/game/quotes/vote` | Submit quote option per question (active in `game_quotes` only). |
-| `POST /api/game/bingo/claim` | Claim completed line keys + optional full card; awards **50** / **100** / **500** per new column / row / full card. |
+| `POST /api/game/bingo/mark` | Toggle a cell vs. server “now playing” title; apply **−5** if the tile does not match. |
+| `POST /api/game/bingo/claim` | Claim completed line keys + optional full card (requires server marks); awards **50** / **100** / **500** per new column / row / full card. |
+| `POST /api/admin/bingo-advance-song` | Host: advance to next title in the shuffled pool. |
 | `GET /api/admin/state` | Full **`SessionState`** if `x-admin-key` matches `ADMIN_SECRET`. |
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
@@ -95,9 +97,9 @@ The repository implements the **full guest sequence** above: real trivia, music 
 - **Games:** `src/lib/gameConfig.ts` — three games: team trivia, music bingo, team quotes (`GAMES[0]…[2]`).
 - **Scoring:**
   - Trivia & quotes: `computeTriviaScoresFromVotes` + `majorityVote` / `teamChoiceMatchesCorrect` — **50** points per question when the team majority matches `correctIndex`; plurality tie-break uses **lower option index** (`pluralityWinner`).
-  - Bingo: `claimBingo` adds **50** per new column line, **100** per new row, **500** once for key `full` (entire card marked).
+  - Bingo: shuffled `bingoSongOrder`, **15 min** `bingoRoundEndsAtEpochMs` → auto `leaderboard_post_bingo`; `markBingoCell` vs. current title; `claimBingo` adds **50** / **100** / **500** per new column / row / `full` (all cells marked on server).
   - Round scores persisted when entering each leaderboard / final step via `recordRoundScoresForCompletedGame`.
-- **Revision:** Incremented on advancing step and on bingo claims; exposed to clients for sync.
+- **Revision:** Incremented on advancing step, bingo marks, bingo claims, and host “next song”; exposed to clients for sync.
 - **Countdown:** `countdownRemaining` is set when **entering** a `countdown_*` step; the **UI** (`CountdownScreen`) runs a local ticking timer. The server does **not** auto-advance when it hits zero — the **host** advances to the game step. (Product copy can still say “get ready”; technically it is host-gated.)
 
 ### 5.4 Content modules
@@ -105,7 +107,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | Content | Location |
 |---------|----------|
 | Trivia (20 × 4 options, topics UK / 1970s / Barcelona) | `src/content/trivia.ts` |
-| Bingo pool (30 titles) | `src/content/bingo.ts`; card seeded per player in `MusicBingoScreen` + `bingoCard.ts` |
+| Bingo pool (50 titles) | `src/content/bingo.ts`; round timer + playlist in `store` + `bingoRound.ts`; card seeded in `bingoCard.ts` |
 | Quotes (N × 4 from JSON) | `src/lib/content/quoteQuestions.json` + `quoteContent.ts` |
 
 ### 5.5 Client persistence (`src/lib/clientStorage.ts`)
@@ -124,7 +126,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 - **`guest/NicknameForm`** — check-in with quirky copy + `PrimaryActionButton`.
 - **`guest/PlayPageContent`** — redirect to `/` if no persisted player id.
 - **`guest/PlayView`** — switches on **`guestStep`**: `PartyProtocolScreen`, `LobbyScreen` (trivia / music_bingo), `CountdownScreen`, `TriviaGameScreen`, `MusicBingoScreen`, `IdentifyQuoteGameScreen`, `GameLeaderboard`, `FinalLeaderboard`, `WaitingLobby`.
-- **`admin/AdminPanel`** — full session dump, next-step preview labels, start-next + reset.
+- **`admin/AdminPanel`** — full session dump, next-step preview labels, start-next + reset; during `game_bingo`, **now playing** + **advance song**.
 - **Shared game UI** under `src/components/game/`: `MultipleChoicePanel`, `QuestionProgress`, `TeamMajorityExplainer`, `PrimaryActionButton`, etc.
 
 **Legacy:** `guest/MockGameScreen.tsx` remains in the repo but is **not** used by `PlayView` (replaced by real game screens).
@@ -202,10 +204,12 @@ src/
         trivia/vote/route.ts
         quotes/vote/route.ts
         bingo/claim/route.ts
+        bingo/mark/route.ts
       admin/
         state/route.ts
         start-next/route.ts
         reset/route.ts
+        bingo-advance-song/route.ts
   components/
     layout/
       MobileLayout.tsx
@@ -243,6 +247,7 @@ src/
     clientStorage.ts
     bingoLine.ts
     bingoCard.ts
+    bingoRound.ts
     majorityVote.ts
     triviaScoring.ts
     quoteContent.ts
@@ -267,7 +272,7 @@ Detailed briefs for parallel work. **Each brief includes mandatory `## TDD (requ
 | [screen-leaderboard.md](./screen-leaderboard.md) | Leaderboard between rounds |
 | [screen-admin.md](./screen-admin.md) | Host control panel |
 | [game-trivia-team.md](./game-trivia-team.md) | Team trivia (majority, scoring) |
-| [game-music-bingo.md](./game-music-bingo.md) | Individual bingo grid + songs |
+| [game-music-bingo.md](./game-music-bingo.md) | Music bingo: 50-title pool, host playlist, marks/claims, 15 min round, scoring |
 | [game-identify-quote-team.md](./game-identify-quote-team.md) | Team quotes + new teams |
 
 ---
@@ -353,7 +358,7 @@ Goal: **one implementation** for patterns that appear on multiple flows. Game-sp
 | Lobby | `guest/LobbyScreen.tsx` | `variant`: `trivia` \| `music_bingo`; trivia shows `teams` roster. |
 | Countdown | `guest/CountdownScreen.tsx` | Game name, team list, local timer display. |
 | Trivia / quotes | `guest/TriviaGameScreen.tsx`, `guest/IdentifyQuoteGameScreen.tsx` | MCQ flows using shared game components. |
-| Bingo | `guest/MusicBingoScreen.tsx` | 2×3 grid + `bingoCard` / `bingoLine` helpers. |
+| Bingo | `guest/MusicBingoScreen.tsx` | 2×3 grid; mark/claim APIs; countdown; `bingoCard` / `bingoLine` / `bingoRound`. |
 | Mid-event leaderboard | `guest/GameLeaderboard.tsx` | Per-round scores (`individual` \| `team`). |
 | Final totals | `guest/FinalLeaderboard.tsx` | Cumulative standings. |
 | Waiting copy | `guest/WaitingLobby.tsx` | Host-driven waits. |
@@ -366,7 +371,7 @@ Goal: **one implementation** for patterns that appear on multiple flows. Game-sp
 |--------|----------------|
 | `majorityVote.ts` | Plurality + tie-break; used by trivia and quotes scoring. |
 | `triviaScoring.ts` | Per-question team scoring; reused for quotes via `computeTriviaScoresFromVotes`. |
-| `bingoLine.ts` / `bingoCard.ts` | Lines, keys, local card generation. |
+| `bingoLine.ts` / `bingoCard.ts` / `bingoRound.ts` | Lines, points, card generation, round duration & wrong-tap penalty. |
 | `leaderboardSort.ts` | Consistent ordering for displays. |
 
 ### 13.3 Folder convention

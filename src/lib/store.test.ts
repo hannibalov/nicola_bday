@@ -1,3 +1,5 @@
+import { bingoCardTitlesForPlayer } from "./bingoCard";
+import { BINGO_CELL_COUNT } from "./bingoLine";
 import {
   registerPlayer,
   getSessionState,
@@ -6,6 +8,9 @@ import {
   resetSession,
   rebuildTeams,
   claimBingo,
+  markBingoCell,
+  setBingoPlaybackForTests,
+  adminAdvanceBingoSong,
   submitTriviaVote,
   submitQuoteVote,
   applyDueScheduledTransitions,
@@ -20,6 +25,28 @@ import { GUEST_STEP_SEQUENCE, type GuestStep } from "@/types";
 beforeEach(() => {
   resetSession();
 });
+
+/** Aligns playback with the player’s top row so server marks + claims stay valid. */
+function markTopRowForPlayer(playerId: string) {
+  const titles = bingoCardTitlesForPlayer(playerId);
+  const pad = "__pad__";
+  const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
+  setBingoPlaybackForTests(order, 0);
+  expect(markBingoCell(playerId, 0, true).ok).toBe(true);
+  setBingoPlaybackForTests(order, 1);
+  expect(markBingoCell(playerId, 1, true).ok).toBe(true);
+  setBingoPlaybackForTests(order, 2);
+  expect(markBingoCell(playerId, 2, true).ok).toBe(true);
+}
+
+function markFullCardForPlayer(playerId: string) {
+  const titles = bingoCardTitlesForPlayer(playerId);
+  const order = [...titles, "__pad__"];
+  for (let i = 0; i < BINGO_CELL_COUNT; i++) {
+    setBingoPlaybackForTests(order, i);
+    expect(markBingoCell(playerId, i, true).ok).toBe(true);
+  }
+}
 
 /**
  * One host “chapter” in tests: advance phase, and if the host just scheduled a lobby countdown
@@ -309,17 +336,23 @@ describe("store", () => {
       const id = registerPlayer("A");
       expect(getPublicState(id).myBingoClaimedLineKeys).toEqual([]);
       expect(getPublicState(id).myBingoScore).toBe(0);
+      expect(getPublicState(id).bingoRoundEndsAtEpochMs).toBeNull();
+      expect(getPublicState(id).myBingoMarkedCells).toEqual([]);
     });
 
-    it("exposes myBingoClaimedLineKeys and score during game_bingo after claims", () => {
+    it("exposes bingo countdown, marks, myBingoClaimedLineKeys and score during game_bingo", () => {
       const id = registerPlayer("A");
       while (getSessionState().guestStep !== "game_bingo") {
         stepForwardInTests();
       }
+      const pub0 = getPublicState(id);
+      expect(pub0.bingoRoundEndsAtEpochMs).toBeGreaterThan(Date.now());
+      markTopRowForPlayer(id);
       claimBingo(id, ["0,1,2"]);
       const pub = getPublicState(id);
       expect(pub.myBingoClaimedLineKeys).toContain("0,1,2");
       expect(pub.myBingoScore).toBe(100);
+      expect(pub.myBingoMarkedCells.slice(0, 3)).toEqual([true, true, true]);
     });
   });
 
@@ -341,9 +374,16 @@ describe("store", () => {
     it("awards 100 for a new row and 50 for a new column", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
+      markTopRowForPlayer(id);
       const topRow = claimBingo(id, ["0,1,2"]);
       expect(topRow?.awarded).toBe(100);
       expect(topRow?.totalForPlayer).toBe(100);
+      const titles = bingoCardTitlesForPlayer(id);
+      const pad = "__pad__";
+      setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 0);
+      markBingoCell(id, 0, true);
+      setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 1);
+      markBingoCell(id, 3, true);
       const col = claimBingo(id, ["0,3"]);
       expect(col?.awarded).toBe(50);
       expect(col?.totalForPlayer).toBe(150);
@@ -353,14 +393,16 @@ describe("store", () => {
     it("stacks points for multiple new lines in one claim", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
+      markFullCardForPlayer(id);
       const r = claimBingo(id, ["0,1,2", "3,4,5"]);
       expect(r?.awarded).toBe(200);
       expect(r?.totalForPlayer).toBe(200);
     });
 
-    it("awards 500 once for the full-card key", () => {
+    it("awards 500 once for the full-card key when every cell is marked", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
+      markFullCardForPlayer(id);
       const r = claimBingo(id, ["full"]);
       expect(r?.awarded).toBe(500);
       expect(r?.totalForPlayer).toBe(500);
@@ -371,6 +413,7 @@ describe("store", () => {
     it("combines lines and full-card points in one claim", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
+      markFullCardForPlayer(id);
       const r = claimBingo(id, ["0,1,2", "3,4,5", "0,3", "1,4", "2,5", "full"]);
       expect(r?.awarded).toBe(850);
       expect(r?.totalForPlayer).toBe(850);
@@ -385,11 +428,66 @@ describe("store", () => {
     it("keeps live bingo scores on post-bingo leaderboard snapshot", () => {
       const id = registerPlayer("A");
       advanceUntil("game_bingo");
+      markTopRowForPlayer(id);
       claimBingo(id, ["0,1,2"]);
       advancePhase();
       expect(getSessionState().guestStep).toBe("leaderboard_post_bingo");
       const board = getSessionState().gameScores[GAMES[1].id]!;
       expect(board[id]).toBe(100);
+    });
+
+    it("does not award lines that are not fully marked on the server", () => {
+      const id = registerPlayer("A");
+      advanceUntil("game_bingo");
+      expect(claimBingo(id, ["0,1,2"])?.awarded).toBe(0);
+    });
+  });
+
+  describe("markBingoCell", () => {
+    function advanceUntil(step: GuestStep) {
+      let guard = 0;
+      while (getSessionState().guestStep !== step && guard < 30) {
+        stepForwardInTests();
+        guard++;
+      }
+      expect(getSessionState().guestStep).toBe(step);
+    }
+
+    it("applies a penalty when marking a tile that is not the current song", () => {
+      const id = registerPlayer("A");
+      advanceUntil("game_bingo");
+      const titles = bingoCardTitlesForPlayer(id);
+      setBingoPlaybackForTests([titles[0]!], 0);
+      const r = markBingoCell(id, 4, true);
+      expect(r.ok).toBe(true);
+      if (!r.ok) throw new Error("expected markBingoCell success");
+      expect(r.wrongTapPenalty).toBe(true);
+      expect(getSessionState().gameScores[GAMES[1].id]![id]).toBe(-5);
+      expect(r.marked[4]).toBe(false);
+    });
+
+    it("advances the host playhead with adminAdvanceBingoSong", () => {
+      registerPlayer("A");
+      advanceUntil("game_bingo");
+      expect(adminAdvanceBingoSong()).toEqual({ ok: true });
+      expect(getSessionState().bingoCurrentSongIndex).toBe(1);
+    });
+  });
+
+  describe("applyDueBingoRoundEnd", () => {
+    it("moves to bingo leaderboard and records scores when the round timer is past", () => {
+      const id = registerPlayer("A");
+      while (getSessionState().guestStep !== "game_bingo") {
+        stepForwardInTests();
+      }
+      markTopRowForPlayer(id);
+      claimBingo(id, ["0,1,2"]);
+      const endAt = getSessionState().bingoRoundEndsAtEpochMs!;
+      jest.useFakeTimers({ now: endAt + 2_000, advanceTimers: true });
+      getSessionState();
+      expect(getSessionState().guestStep).toBe("leaderboard_post_bingo");
+      expect(getSessionState().gameScores[GAMES[1].id]![id]).toBe(100);
+      jest.useRealTimers();
     });
   });
 
@@ -417,6 +515,8 @@ describe("store", () => {
       expect(state.teams).toHaveLength(0);
       expect(state.revision).toBe(0);
       expect(state.bingoClaimedLineKeysByPlayer).toEqual({});
+      expect(state.bingoMarkedByPlayer).toEqual({});
+      expect(state.bingoSongOrder).toEqual([]);
       expect(state.triviaVotesByPlayer).toEqual({});
       expect(state.quoteVotesByPlayer).toEqual({});
       expect(state.teamMcqRoundIndex).toBe(0);

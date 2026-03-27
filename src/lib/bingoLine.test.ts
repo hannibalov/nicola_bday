@@ -4,6 +4,7 @@ import {
   BINGO_VALID_LINE_KEYS,
   bingoLineKey,
   bingoPointsForValidLineKey,
+  bingoIndicesForLineKey,
   completedBingoLineKeys,
   hasCompleteBingoLine,
 } from "./bingoLine";
@@ -39,6 +40,14 @@ describe("bingoPointsForValidLineKey", () => {
     expect(bingoPointsForValidLineKey("0,3")).toBe(BINGO_POINTS_COLUMN);
     expect(bingoPointsForValidLineKey("1,4")).toBe(BINGO_POINTS_COLUMN);
     expect(bingoPointsForValidLineKey("2,5")).toBe(BINGO_POINTS_COLUMN);
+  });
+});
+
+describe("bingoIndicesForLineKey", () => {
+  it("maps keys to cell indices", () => {
+    expect(bingoIndicesForLineKey("0,1,2")).toEqual([0, 1, 2]);
+    expect(bingoIndicesForLineKey("0,3")).toEqual([0, 3]);
+    expect(bingoIndicesForLineKey("nope")).toBeNull();
   });
 });
 

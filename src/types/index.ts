@@ -64,6 +64,14 @@ export interface SessionState {
   games: GameConfig[];
   /** During music bingo: scored row/column keys (e.g. `"0,1,2"`) plus optional `"full"` for the blackout bonus. */
   bingoClaimedLineKeysByPlayer: Record<string, string[]>;
+  /** Shuffled play order for the host; set when entering `game_bingo`. */
+  bingoSongOrder: string[];
+  /** Index into {@link bingoSongOrder} for the song playing now. */
+  bingoCurrentSongIndex: number;
+  /** When the bingo round auto-advances to `leaderboard_post_bingo` and finalizes scores. */
+  bingoRoundEndsAtEpochMs: number | null;
+  /** Server truth for marked cells (`true` = correctly matched the active song at tap time). */
+  bingoMarkedByPlayer: Record<string, boolean[]>;
   /** During team trivia: `playerId` → `questionId` → chosen option index (0–3). */
   triviaVotesByPlayer: Record<string, Record<string, number>>;
   /** During “Who said it”: `playerId` → `quoteId` → chosen option index (0–3). */
@@ -117,6 +125,10 @@ export interface PublicState {
   myBingoClaimedLineKeys: string[];
   /** Live total for music bingo round (same step only). */
   myBingoScore: number;
+  /** Round end time for bingo countdown UI; `null` when not in `game_bingo`. */
+  bingoRoundEndsAtEpochMs: number | null;
+  /** This player’s marked cells (length 6) during `game_bingo`; empty otherwise. */
+  myBingoMarkedCells: boolean[];
   /** Server-backed trivia selections for this player during `game_trivia`. */
   myTriviaVotes: Record<string, number>;
   /** Server-backed quote selections for this player during `game_quotes`. */

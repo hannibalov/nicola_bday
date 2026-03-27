@@ -251,7 +251,7 @@ export default function LobbyScreen({
                 ? "UK · Barcelona · 1970s threads — 20 questions, 50 pts each."
                 : variant === "identify_quote"
                   ? `${QUOTE_ROUND_COUNT} quotes, four choices — your team’s majority locks the answer.`
-                  : "2×3 card, 30 classic titles — 50 pts per column, 100 per row, 500 for a full card."}
+                  : "2×3 card, 50 ’70s titles — host plays one track at a time; tap only when that song is on. 50 / 100 / 500 pts for column / row / full card; wrong tile −5."}
             </p>
           </div>
         </div>

@@ -31,9 +31,9 @@ Reuse the **same page/component** with different **copy** and **optional team ro
 
 ## Current implementation
 
-- No dedicated lobby; `WaitingLobby` is only “Waiting for host to start…” during server `lobby` phase.
-- `CountdownScreen` shows teammates during **team** countdown, not a full lobby with instructions + roster.
-- **Gap:** Brief may pre-date `LobbyScreen` + `GuestStep`; confirm trivia vs bingo lobby steps and admin “Start next” match this doc.
+- **`LobbyScreen`** (`src/components/guest/LobbyScreen.tsx`) with `variant: 'trivia' | 'music_bingo' | 'identify_quote'`, wired from `PlayView` on `lobby_trivia`, `lobby_bingo`, `lobby_quotes`.
+- **Music bingo** variant: individual copy (50-title pool, host plays one song at a time, scoring tiers, wrong-tap penalty); no team roster. See [game-music-bingo.md](./game-music-bingo.md).
+- **Countdown** after lobby schedules `game_*` via `scheduledGameStartsAtEpochMs` + `applyDueScheduledTransitions` (same pattern for all games).
 
 ---
 

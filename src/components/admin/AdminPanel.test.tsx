@@ -19,6 +19,10 @@ const mockSessionState = (players: { id: string; nickname: string }[]) => ({
   teams: [],
   gameScores: {},
   bingoClaimedLineKeysByPlayer: {} as Record<string, string[]>,
+  bingoSongOrder: [] as string[],
+  bingoCurrentSongIndex: 0,
+  bingoRoundEndsAtEpochMs: null as number | null,
+  bingoMarkedByPlayer: {} as Record<string, boolean[]>,
   games: [
     { id: "g1", name: "Team trivia", type: "team" as const, countdownSeconds: 10 },
     { id: "g2", name: "Music bingo", type: "individual" as const, countdownSeconds: 10 },

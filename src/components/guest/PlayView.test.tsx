@@ -98,6 +98,8 @@ describe("PlayView", () => {
               syncRevision: 0,
               myBingoClaimedLineKeys: [],
               myBingoScore: 0,
+              bingoRoundEndsAtEpochMs: null,
+              myBingoMarkedCells: [],
               myTriviaVotes: {},
               myQuoteVotes: {},
               teamMcqSync: null,

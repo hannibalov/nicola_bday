@@ -186,6 +186,8 @@ export default function PlayView() {
       <MusicBingoScreen
         serverClaimedLineKeys={state.myBingoClaimedLineKeys}
         myBingoScore={state.myBingoScore}
+        bingoRoundEndsAtEpochMs={state.bingoRoundEndsAtEpochMs}
+        myBingoMarkedCells={state.myBingoMarkedCells}
       />
     );
   }

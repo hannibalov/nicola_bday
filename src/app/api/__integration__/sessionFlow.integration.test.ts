@@ -9,13 +9,16 @@ import { POST as postAdminReset } from "@/app/api/admin/reset/route";
 import { GET as getAdminState } from "@/app/api/admin/state/route";
 import { POST as postTriviaVote } from "@/app/api/game/trivia/vote/route";
 import { POST as postBingoClaim } from "@/app/api/game/bingo/claim/route";
+import { POST as postBingoMark } from "@/app/api/game/bingo/mark/route";
 import { POST as postQuoteVote } from "@/app/api/game/quotes/vote/route";
 import {
   resetSession,
   getSessionState,
+  setBingoPlaybackForTests,
   applyDueScheduledTransitions,
   applyDueTeamMcqRoundAdvance,
 } from "@/lib/store";
+import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 import type { GuestStep } from "@/types";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 import { TEAM_MCQ_CYCLE_MS } from "@/lib/teamMcqTiming";
@@ -165,11 +168,31 @@ describe("session flow integration (HTTP + store)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("bingo: claim via API updates public myBingoScore while in game_bingo", async () => {
+  it("bingo: mark + claim via API updates public myBingoScore while in game_bingo", async () => {
     const id = await registerViaApi("BingoUser");
     await advanceGuestStepUntil("game_bingo");
 
+    const titles = bingoCardTitlesForPlayer(id);
+    const pad = "__pad__";
+    const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
+    setBingoPlaybackForTests(order, 0);
     setPlayerCookie(id);
+    async function markCell(cellIndex: number, mark: boolean) {
+      const res = await postBingoMark(
+        new Request("http://localhost/api/game/bingo/mark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cellIndex, mark }),
+        })
+      );
+      expect(res.status).toBe(200);
+    }
+    await markCell(0, true);
+    setBingoPlaybackForTests(order, 1);
+    await markCell(1, true);
+    setBingoPlaybackForTests(order, 2);
+    await markCell(2, true);
+
     const claimRes = await postBingoClaim(
       new Request("http://localhost/api/game/bingo/claim", {
         method: "POST",
@@ -184,6 +207,7 @@ describe("session flow integration (HTTP + store)", () => {
     const pub = await readPublicState();
     expect(pub.myBingoScore).toBe(claimJson.totalForPlayer);
     expect(pub.myBingoClaimedLineKeys).toContain("0,1,2");
+    expect(pub.myBingoMarkedCells.filter(Boolean).length).toBe(3);
   });
 
   it("quotes: vote via API then final leaderboard exposes totals", async () => {

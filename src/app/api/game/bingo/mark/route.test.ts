@@ -4,12 +4,11 @@
 import { POST } from "./route";
 import {
   advancePhase,
+  applyDueScheduledTransitions,
   getSessionState,
   registerPlayer,
   resetSession,
-  applyDueScheduledTransitions,
   setBingoPlaybackForTests,
-  markBingoCell,
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 
@@ -39,55 +38,35 @@ function advanceUntilGameBingo() {
   expect(getSessionState().guestStep).toBe("game_bingo");
 }
 
-describe("POST /api/game/bingo/claim", () => {
+describe("POST /api/game/bingo/mark", () => {
   it("returns 401 without playerId cookie", async () => {
     const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
+      new Request("http://localhost/api/game/bingo/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
+        body: JSON.stringify({ cellIndex: 0, mark: true }),
       })
     );
     expect(res.status).toBe(401);
   });
 
-  it("returns 400 when not in game_bingo", async () => {
-    const id = registerPlayer("A");
-    mockCookies.set("playerId", id);
-    const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it("awards points when in game_bingo", async () => {
+  it("returns marked cells when the tile matches the current song", async () => {
     const id = registerPlayer("A");
     mockCookies.set("playerId", id);
     advanceUntilGameBingo();
     const titles = bingoCardTitlesForPlayer(id);
-    const pad = "__pad__";
-    const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
-    setBingoPlaybackForTests(order, 0);
-    markBingoCell(id, 0, true);
-    setBingoPlaybackForTests(order, 1);
-    markBingoCell(id, 1, true);
-    setBingoPlaybackForTests(order, 2);
-    markBingoCell(id, 2, true);
+    setBingoPlaybackForTests([titles[0]!], 0);
 
     const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
+      new Request("http://localhost/api/game/bingo/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
+        body: JSON.stringify({ cellIndex: 0, mark: true }),
       })
     );
     expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.awarded).toBe(100);
-    expect(data.totalForPlayer).toBe(100);
+    const data = (await res.json()) as { marked: boolean[]; wrongTapPenalty: boolean };
+    expect(data.marked[0]).toBe(true);
+    expect(data.wrongTapPenalty).toBe(false);
   });
 });

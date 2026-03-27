@@ -11,10 +11,15 @@ import {
   publicGameIndexFromGuestStep,
 } from "@/types";
 import { GAMES } from "./gameConfig";
+import { BINGO_SONG_TITLES } from "@/content/bingo";
+import { bingoCardTitlesForPlayer } from "./bingoCard";
+import { BINGO_ROUND_DURATION_MS, BINGO_WRONG_TAP_PENALTY } from "./bingoRound";
 import {
+  BINGO_CELL_COUNT,
   BINGO_FULL_CARD_CLAIM_KEY,
   BINGO_POINTS_FULL_CARD,
   BINGO_VALID_LINE_KEYS,
+  bingoIndicesForLineKey,
   bingoPointsForValidLineKey,
 } from "./bingoLine";
 import { sortLeaderboardEntries } from "./leaderboardSort";
@@ -49,6 +54,7 @@ const INITIAL_STATE: Omit<
   | "teams"
   | "gameScores"
   | "bingoClaimedLineKeysByPlayer"
+  | "bingoMarkedByPlayer"
   | "triviaVotesByPlayer"
   | "quoteVotesByPlayer"
 > = {
@@ -59,6 +65,9 @@ const INITIAL_STATE: Omit<
   teamMcqRoundIndex: 0,
   teamMcqRoundStartedAtEpochMs: null,
   games: GAMES,
+  bingoSongOrder: [],
+  bingoCurrentSongIndex: 0,
+  bingoRoundEndsAtEpochMs: null,
 };
 
 const LOBBY_STEPS_WITH_SCHEDULE: readonly GuestStep[] = [
@@ -78,6 +87,7 @@ function getState(): SessionState {
       teams: [],
       gameScores: {},
       bingoClaimedLineKeysByPlayer: {},
+      bingoMarkedByPlayer: {},
       triviaVotesByPlayer: {},
       quoteVotesByPlayer: {},
       teamMcqRoundIndex: 0,
@@ -90,6 +100,18 @@ function getState(): SessionState {
   }
   if (!s.quoteVotesByPlayer) {
     s.quoteVotesByPlayer = {};
+  }
+  if (!s.bingoMarkedByPlayer) {
+    s.bingoMarkedByPlayer = {};
+  }
+  if (!s.bingoSongOrder) {
+    s.bingoSongOrder = [];
+  }
+  if (s.bingoCurrentSongIndex === undefined) {
+    s.bingoCurrentSongIndex = 0;
+  }
+  if (s.bingoRoundEndsAtEpochMs === undefined) {
+    s.bingoRoundEndsAtEpochMs = null;
   }
   if (s.scheduledGameStartsAtEpochMs === undefined) {
     s.scheduledGameStartsAtEpochMs = null;
@@ -143,6 +165,24 @@ export function applyDueScheduledTransitions(nowMs: number = Date.now()): void {
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.countdownRemaining = null;
+  state.revision += 1;
+  notifySessionChanged();
+}
+
+/**
+ * Ends music bingo when the round timer expires; snapshot scores via {@link applyTransitionSideEffects}.
+ */
+export function applyDueBingoRoundEnd(nowMs: number = Date.now()): void {
+  const state = getState();
+  if (state.guestStep !== "game_bingo") return;
+  if (state.bingoRoundEndsAtEpochMs == null) return;
+  if (nowMs < state.bingoRoundEndsAtEpochMs) return;
+
+  const from = state.guestStep;
+  const to = "leaderboard_post_bingo" as const;
+  applyTransitionSideEffects(from, to);
+  state.guestStep = to;
+  state.bingoRoundEndsAtEpochMs = null;
   state.revision += 1;
   notifySessionChanged();
 }
@@ -207,6 +247,13 @@ function lobbyTeamsFromSession(state: SessionState): LobbyTeamRoster[] {
 function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
   const state = getState();
 
+  if (from === "game_bingo" && to !== "game_bingo") {
+    state.bingoRoundEndsAtEpochMs = null;
+    state.bingoSongOrder = [];
+    state.bingoCurrentSongIndex = 0;
+    state.bingoMarkedByPlayer = {};
+  }
+
   if (to === "lobby_trivia" || to === "lobby_bingo" || to === "lobby_quotes") {
     state.scheduledGameStartsAtEpochMs = null;
   }
@@ -241,7 +288,13 @@ function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
 
   if (to === "game_bingo") {
     state.bingoClaimedLineKeysByPlayer = {};
+    state.bingoMarkedByPlayer = {};
     state.gameScores[BINGO_GAME_ID] = {};
+    const order = [...BINGO_SONG_TITLES];
+    shuffle(order);
+    state.bingoSongOrder = order;
+    state.bingoCurrentSongIndex = 0;
+    state.bingoRoundEndsAtEpochMs = Date.now() + BINGO_ROUND_DURATION_MS;
   }
 
   if (to === "leaderboard_post_trivia") {
@@ -314,6 +367,42 @@ function teamPlayerCount(t: Team): number {
   return t.playerIds.length;
 }
 
+function normalizedBingoMarks(m: boolean[] | undefined): boolean[] {
+  if (!m || m.length !== BINGO_CELL_COUNT) {
+    return Array.from({ length: BINGO_CELL_COUNT }, () => false);
+  }
+  return [...m];
+}
+
+function bingoLineFullyMarkedOnServer(
+  state: SessionState,
+  playerId: string,
+  lineKey: string
+): boolean {
+  const idx = bingoIndicesForLineKey(lineKey);
+  if (!idx) return false;
+  const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
+  return idx.every((i) => marks[i]);
+}
+
+function bingoFullCardMarkedOnServer(
+  state: SessionState,
+  playerId: string
+): boolean {
+  const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
+  return marks.every(Boolean);
+}
+
+function currentBingoSongTitle(state: SessionState): string | null {
+  const order = state.bingoSongOrder;
+  if (!order.length) return null;
+  const i = Math.min(
+    Math.max(0, state.bingoCurrentSongIndex),
+    order.length - 1
+  );
+  return order[i] ?? null;
+}
+
 function getLeaderboardForGameSlot(slot: number): { name: string; score: number }[] {
   const state = getState();
   const game = GAMES[slot] ?? null;
@@ -367,6 +456,9 @@ export function claimBingo(
   playerId: string,
   lineKeys: string[]
 ): BingoClaimResult | null {
+  applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   if (state.guestStep !== "game_bingo") return null;
   if (!state.players.some((p) => p.id === playerId)) return null;
@@ -374,11 +466,15 @@ export function claimBingo(
   const unique = [...new Set(lineKeys)];
   const priorClaimed = state.bingoClaimedLineKeysByPlayer[playerId] ?? [];
   const validNewLines = unique.filter(
-    (k) => BINGO_VALID_LINE_KEYS.has(k) && !priorClaimed.includes(k)
+    (k) =>
+      BINGO_VALID_LINE_KEYS.has(k) &&
+      !priorClaimed.includes(k) &&
+      bingoLineFullyMarkedOnServer(state, playerId, k)
   );
   const fullNew =
     unique.includes(BINGO_FULL_CARD_CLAIM_KEY) &&
-    !priorClaimed.includes(BINGO_FULL_CARD_CLAIM_KEY);
+    !priorClaimed.includes(BINGO_FULL_CARD_CLAIM_KEY) &&
+    bingoFullCardMarkedOnServer(state, playerId);
 
   if (validNewLines.length === 0 && !fullNew) {
     const cur = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
@@ -413,6 +509,112 @@ export function claimBingo(
   };
 }
 
+export type BingoMarkResult =
+  | { ok: true; marked: boolean[]; score: number; wrongTapPenalty: boolean }
+  | {
+      ok: false;
+      error: "not_active" | "unknown_player" | "bad_cell" | "no_song";
+    };
+
+/** Test helper: control the shuffled playlist and playhead (used by `store.test.ts`). */
+export function setBingoPlaybackForTests(order: string[], index: number): void {
+  const state = getState();
+  state.bingoSongOrder = [...order];
+  state.bingoCurrentSongIndex = index;
+}
+
+/**
+ * Mark or unmark a bingo cell. Turning a cell on is allowed only when its title
+ * matches the server’s current song; otherwise the player loses {@link BINGO_WRONG_TAP_PENALTY}.
+ */
+export function markBingoCell(
+  playerId: string,
+  cellIndex: number,
+  mark: boolean
+): BingoMarkResult {
+  applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
+  const state = getState();
+  if (state.guestStep !== "game_bingo") {
+    return { ok: false, error: "not_active" };
+  }
+  if (!state.players.some((p) => p.id === playerId)) {
+    return { ok: false, error: "unknown_player" };
+  }
+  if (
+    !Number.isInteger(cellIndex) ||
+    cellIndex < 0 ||
+    cellIndex >= BINGO_CELL_COUNT
+  ) {
+    return { ok: false, error: "bad_cell" };
+  }
+
+  const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
+
+  if (!mark) {
+    marks[cellIndex] = false;
+    state.bingoMarkedByPlayer[playerId] = marks;
+    state.revision += 1;
+    notifySessionChanged();
+    const score = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
+    return { ok: true, marked: marks, score, wrongTapPenalty: false };
+  }
+
+  if (marks[cellIndex]) {
+    const score = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
+    return { ok: true, marked: marks, score, wrongTapPenalty: false };
+  }
+
+  const current = currentBingoSongTitle(state);
+  if (!current) {
+    return { ok: false, error: "no_song" };
+  }
+
+  const cellTitle = bingoCardTitlesForPlayer(playerId)[cellIndex];
+  if (cellTitle !== current) {
+    if (!state.gameScores[BINGO_GAME_ID]) {
+      state.gameScores[BINGO_GAME_ID] = {};
+    }
+    const prev = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
+    state.gameScores[BINGO_GAME_ID]![playerId] =
+      prev - BINGO_WRONG_TAP_PENALTY;
+    state.revision += 1;
+    notifySessionChanged();
+    const score = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
+    return { ok: true, marked: marks, score, wrongTapPenalty: true };
+  }
+
+  marks[cellIndex] = true;
+  state.bingoMarkedByPlayer[playerId] = marks;
+  state.revision += 1;
+  notifySessionChanged();
+  const score = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
+  return { ok: true, marked: marks, score, wrongTapPenalty: false };
+}
+
+export type AdminBingoAdvanceResult =
+  | { ok: true }
+  | { ok: false; error: "not_bingo" | "at_end" };
+
+export function adminAdvanceBingoSong(): AdminBingoAdvanceResult {
+  applyDueScheduledTransitions();
+  applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
+  const state = getState();
+  if (state.guestStep !== "game_bingo") {
+    return { ok: false, error: "not_bingo" };
+  }
+  const max = state.bingoSongOrder.length - 1;
+  if (state.bingoCurrentSongIndex >= max) {
+    return { ok: false, error: "at_end" };
+  }
+  state.bingoCurrentSongIndex += 1;
+  state.revision += 1;
+  notifySessionChanged();
+  return { ok: true };
+}
+
 export type TriviaVoteResult =
   | { ok: true }
   | {
@@ -432,6 +634,7 @@ export function submitTriviaVote(
 ): TriviaVoteResult {
   applyDueScheduledTransitions();
   applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   if (state.guestStep !== "game_trivia") {
     return { ok: false, error: "not_active" };
@@ -473,6 +676,7 @@ export function submitQuoteVote(
 ): QuoteVoteResult {
   applyDueScheduledTransitions();
   applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   if (state.guestStep !== "game_quotes") {
     return { ok: false, error: "not_active" };
@@ -506,6 +710,7 @@ export function registerPlayer(nickname: string): string {
 export function getSessionState(): SessionState {
   applyDueScheduledTransitions();
   applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   return { ...state, players: [...state.players], teams: [...state.teams] };
 }
@@ -531,6 +736,7 @@ function shouldShowMyTeam(state: SessionState, game: (typeof GAMES)[number] | nu
 export function getPublicState(playerId: string | null): PublicState {
   applyDueScheduledTransitions();
   applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   const game = currentGameForPublic(state);
   let myTeam: Team | null = null;
@@ -575,6 +781,16 @@ export function getPublicState(playerId: string | null): PublicState {
     state.guestStep === "game_bingo" && playerId
       ? state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0
       : 0;
+
+  const bingoRoundEndsAtEpochMs =
+    state.guestStep === "game_bingo"
+      ? state.bingoRoundEndsAtEpochMs
+      : null;
+
+  const myBingoMarkedCells =
+    state.guestStep === "game_bingo" && playerId
+      ? normalizedBingoMarks(state.bingoMarkedByPlayer[playerId])
+      : [];
 
   const myTriviaVotes =
     state.guestStep === "game_trivia" && playerId
@@ -622,6 +838,8 @@ export function getPublicState(playerId: string | null): PublicState {
     games: state.games,
     myBingoClaimedLineKeys,
     myBingoScore,
+    bingoRoundEndsAtEpochMs,
+    myBingoMarkedCells,
     myTriviaVotes,
     myQuoteVotes,
     teamMcqSync,
@@ -631,6 +849,7 @@ export function getPublicState(playerId: string | null): PublicState {
 export function advancePhase(): void {
   applyDueScheduledTransitions();
   applyDueTeamMcqRoundAdvance();
+  applyDueBingoRoundEnd();
   const state = getState();
   const from = state.guestStep;
 
@@ -670,6 +889,7 @@ export function resetSession(): void {
     teams: [],
     gameScores: {},
     bingoClaimedLineKeysByPlayer: {},
+    bingoMarkedByPlayer: {},
     triviaVotesByPlayer: {},
     quoteVotesByPlayer: {},
     scheduledGameStartsAtEpochMs: null,

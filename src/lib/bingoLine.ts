@@ -55,3 +55,13 @@ export function hasCompleteBingoLine(marked: Set<number> | number[]): boolean {
   const set = marked instanceof Set ? marked : new Set(marked);
   return BINGO_WIN_LINES.some((line) => line.every((i) => set.has(i)));
 }
+
+/** Cell indices for a valid row/column key; `null` if not a winning line. */
+export function bingoIndicesForLineKey(lineKey: string): number[] | null {
+  for (const line of BINGO_WIN_LINES) {
+    if (bingoLineKey(line) === lineKey) {
+      return [...line];
+    }
+  }
+  return null;
+}

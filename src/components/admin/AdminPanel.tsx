@@ -27,6 +27,7 @@ export default function AdminPanel() {
   const [authError, setAuthError] = useState(false);
   const [actionError, setActionError] = useState("");
   const [loadingAdvance, setLoadingAdvance] = useState(false);
+  const [loadingBingoSong, setLoadingBingoSong] = useState(false);
   const [loadingReset, setLoadingReset] = useState(false);
   const [justAdvanced, setJustAdvanced] = useState(false);
 
@@ -118,6 +119,28 @@ export default function AdminPanel() {
       setActionError("Network error");
     } finally {
       setLoadingAdvance(false);
+    }
+  }
+
+  async function handleBingoAdvanceSong() {
+    if (!committedKey.trim()) return;
+    setActionError("");
+    setLoadingBingoSong(true);
+    try {
+      const res = await fetch("/api/admin/bingo-advance-song", {
+        method: "POST",
+        headers: adminFetchHeaders(committedKey),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError((data as { error?: string }).error ?? "Could not advance song");
+        return;
+      }
+      fetchState();
+    } catch {
+      setActionError("Network error");
+    } finally {
+      setLoadingBingoSong(false);
     }
   }
 
@@ -285,6 +308,50 @@ export default function AdminPanel() {
             : ""}
         </p>
       </section>
+
+      {state.guestStep === "game_bingo" && state.bingoSongOrder.length > 0 ? (
+        <section
+          data-test-id="admin-bingo-deck"
+          className="space-y-3 rounded-2xl border border-[#0e666a]/30 bg-[#e8f8f9] p-4"
+        >
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#0e666a]">
+            Now playing · music bingo
+          </p>
+          <p className="text-lg font-bold leading-snug text-[#322e25]">
+            {state.bingoSongOrder[state.bingoCurrentSongIndex] ?? "—"}
+          </p>
+          <p className="text-xs font-medium text-[#605b50]">
+            Track {state.bingoCurrentSongIndex + 1} / {state.bingoSongOrder.length} · guests
+            only tap when this title is what’s in the room
+          </p>
+          {state.bingoRoundEndsAtEpochMs != null ? (
+            <p className="text-xs font-medium text-[#605b50]">
+              Round ends automatically at{" "}
+              {new Date(state.bingoRoundEndsAtEpochMs).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}{" "}
+              (15 min), then scores lock for the leaderboard.
+            </p>
+          ) : null}
+          <PrimaryActionButton
+            type="button"
+            onClick={() => void handleBingoAdvanceSong()}
+            disabled={
+              loadingBingoSong ||
+              state.bingoCurrentSongIndex >= state.bingoSongOrder.length - 1
+            }
+            data-test-id="admin-bingo-advance-song"
+            variant="gradient"
+          >
+            {loadingBingoSong
+              ? "…"
+              : state.bingoCurrentSongIndex >= state.bingoSongOrder.length - 1
+                ? "Last song — at end of list"
+                : "Advance to next song →"}
+          </PrimaryActionButton>
+        </section>
+      ) : null}
 
       <section>
         <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-[#605b50]">

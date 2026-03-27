@@ -28,8 +28,8 @@ Show standings **after** a game completes, before the next lobby or the final wr
 ## Current implementation
 
 - `src/components/guest/GameLeaderboard.tsx` — takes `gameName`, `entries: { name, score }[]`, `type: 'individual' | 'team'`.
-- Shown when server `phase === 'leaderboard'` in `PlayView`.
-- Scores come from `getLeaderboardForCurrentGame()` reading `gameScores` filled by **mock** logic.
+- Shown when `guestStep` is `leaderboard_post_trivia`, `leaderboard_post_bingo`, etc., in `PlayView`.
+- Entries come from `getLeaderboardForGameSlot` / `gameScores` after **`recordRoundScoresForCompletedGame`** runs at each leaderboard transition (real trivia/quote scoring and bingo rounds, not mock placeholders).
 
 ---
 

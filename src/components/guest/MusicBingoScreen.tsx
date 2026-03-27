@@ -38,6 +38,8 @@ const body = Be_Vietnam_Pro({
 export type MusicBingoScreenProps = {
   serverClaimedLineKeys: string[];
   myBingoScore: number;
+  bingoRoundEndsAtEpochMs: number | null;
+  myBingoMarkedCells: boolean[];
 };
 
 function markedToIndices(marked: boolean[]): number[] {
@@ -48,9 +50,18 @@ function titlesMatch(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
+function formatRemaining(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
 export default function MusicBingoScreen({
   serverClaimedLineKeys,
   myBingoScore,
+  bingoRoundEndsAtEpochMs,
+  myBingoMarkedCells,
 }: MusicBingoScreenProps) {
   const fontBody = "var(--font-bingo-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-bingo-headline), ui-sans-serif, system-ui";
@@ -60,7 +71,11 @@ export default function MusicBingoScreen({
   );
   const [hydrated, setHydrated] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingMarkCells, setPendingMarkCells] = useState<Set<number>>(
+    () => new Set()
+  );
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(() => Date.now());
 
   useLayoutEffect(() => {
     startTransition(() => {
@@ -75,6 +90,11 @@ export default function MusicBingoScreen({
 
   useEffect(() => {
     if (!playerId || titles.length !== BINGO_CELL_COUNT) return;
+    if (myBingoMarkedCells.length === BINGO_CELL_COUNT) {
+      setMarked([...myBingoMarkedCells]);
+      setHydrated(true);
+      return;
+    }
     const saved = getBingoLocal();
     if (
       saved &&
@@ -86,7 +106,13 @@ export default function MusicBingoScreen({
       setMarked(Array.from({ length: BINGO_CELL_COUNT }, () => false));
     }
     setHydrated(true);
-  }, [playerId, titles]);
+  }, [playerId, titles, myBingoMarkedCells]);
+
+  useEffect(() => {
+    if (bingoRoundEndsAtEpochMs == null) return;
+    const id = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [bingoRoundEndsAtEpochMs]);
 
   useEffect(() => {
     if (
@@ -114,13 +140,52 @@ export default function MusicBingoScreen({
     return [...lines, ...(fullPending ? [BINGO_FULL_CARD_CLAIM_KEY] : [])];
   }, [marked, serverClaimedLineKeys]);
 
-  const toggleCell = useCallback((index: number) => {
-    setMarked((prev) => {
-      const next = [...prev];
-      next[index] = !next[index];
-      return next;
-    });
-  }, []);
+  const toggleCell = useCallback(
+    async (index: number) => {
+      if (playerId == null) return;
+      const nextMark = !marked[index];
+      setPendingMarkCells((s) => new Set(s).add(index));
+      setError(null);
+      try {
+        const res = await fetch("/api/game/bingo/mark", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cellIndex: index, mark: nextMark }),
+        });
+        const data: unknown = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg =
+            typeof data === "object" &&
+            data !== null &&
+            "error" in data &&
+            typeof (data as { error: unknown }).error === "string"
+              ? (data as { error: string }).error
+              : "Could not update tile";
+          setError(msg);
+          return;
+        }
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "marked" in data &&
+          Array.isArray((data as { marked: unknown }).marked)
+        ) {
+          const next = (data as { marked: boolean[] }).marked;
+          if (next.length === BINGO_CELL_COUNT) {
+            setMarked(next);
+          }
+        }
+      } finally {
+        setPendingMarkCells((s) => {
+          const next = new Set(s);
+          next.delete(index);
+          return next;
+        });
+      }
+    },
+    [marked, playerId]
+  );
 
   const onClaim = useCallback(async () => {
     if (newLineKeys.length === 0 || submitting) return;
@@ -158,11 +223,25 @@ export default function MusicBingoScreen({
     );
   }
 
-  const canClaim = newLineKeys.length > 0 && !submitting;
+  if (!hydrated || titles.length !== BINGO_CELL_COUNT) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 px-4 text-center text-zinc-600">
+        <p className="text-lg">Loading your card…</p>
+      </div>
+    );
+  }
+
+  const canClaim =
+    newLineKeys.length > 0 && !submitting && pendingMarkCells.size === 0;
   const allMarked = marked.every(Boolean);
   const fullClaimed = serverClaimedLineKeys.includes(BINGO_FULL_CARD_CLAIM_KEY);
   const hasCompletedLine =
     completedBingoLineKeys(markedToIndices(marked)).length > 0;
+
+  const remainingMs =
+    bingoRoundEndsAtEpochMs != null
+      ? Math.max(0, bingoRoundEndsAtEpochMs - tick)
+      : 0;
 
   return (
     <div
@@ -195,12 +274,24 @@ export default function MusicBingoScreen({
         >
           Music bingo
         </h1>
+        {bingoRoundEndsAtEpochMs != null ? (
+          <p
+            className="mt-2 text-sm font-bold tabular-nums text-[#0e666a]"
+            data-test-id="bingo-round-countdown"
+            style={{ fontFamily: fontHeadline }}
+          >
+            Round ends in {formatRemaining(remainingMs)}
+          </p>
+        ) : null}
         <p className="mt-3 max-w-md text-base leading-relaxed text-[#605b50]">
-          Tap a tile when you hear that song in the room. Bank a column for{" "}
+          The host is playing one song at a time — tap a tile <strong>only</strong>{" "}
+          when that exact track is playing. Bank a column for{" "}
           <span className="font-bold text-[#a33700]">50 pts</span>, a row for{" "}
           <span className="font-bold text-[#a33700]">100 pts</span>, and a one-time{" "}
           <span className="font-bold text-[#a33700]">500 pts</span> when the whole
-          card is filled — call bingo to score each time.
+          card is filled — call bingo to score each time. Wrong tile (when it
+          isn’t the song playing) costs{" "}
+          <span className="font-bold text-[#b02500]">5 pts</span>.
         </p>
         <p
           className="mt-4 text-sm font-bold text-[#0e666a]"
@@ -222,17 +313,19 @@ export default function MusicBingoScreen({
         >
           {titles.map((title, index) => {
             const isOn = marked[index];
+            const busy = pendingMarkCells.has(index);
             return (
               <button
                 key={index}
                 type="button"
                 data-test-id={`bingo-cell-${index}`}
-                onClick={() => toggleCell(index)}
+                disabled={busy}
+                onClick={() => void toggleCell(index)}
                 className={`min-h-[100px] rounded-2xl border-2 px-2 py-3 text-left text-sm font-bold leading-snug transition-all active:scale-[0.98] sm:min-h-[120px] sm:text-base ${
                   isOn
                     ? "border-[#0e666a] bg-[#a6eff3]/50 text-[#005b5f] shadow-inner"
                     : "border-[#e5dcc9] bg-[#fef6e7]/90 text-[#322e25] hover:border-[#a33700]/40"
-                }`}
+                } disabled:opacity-60`}
                 style={{ fontFamily: fontHeadline }}
               >
                 <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-[#a33700]/70">
@@ -267,7 +360,7 @@ export default function MusicBingoScreen({
               ? "You’ve banked every line and the full card."
               : newLineKeys.length === 0 && hasCompletedLine
                 ? "Those lines are already banked — keep listening for another."
-                : "Mark tiles until a row, column, or full card is ready to bank."}
+                : "Mark tiles when the host’s current song matches — then bank rows, columns, or a full card."}
           </p>
         ) : null}
       </div>

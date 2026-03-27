@@ -21,17 +21,19 @@ Host-only control surface (protected by shared **secret**, not user accounts). S
 
 - **Player count** and list of nicknames (already listed today).
 - Trigger **each segment:** open first lobby, start trivia, end trivia → leaderboard, open bingo lobby, start bingo, etc. The exact control model can be **one “Advance”** button (current `start-next`) or **explicit buttons** per transition; product prefers clarity for a stressed host.
-- When advancing, clients should receive updates quickly — **SSE** push recommended (`ARCHITECTURE.md`).
+- **Music bingo:** While guests are on `game_bingo`, show **Now playing** (current title from the shuffled pool) and **Advance to next song** → `POST /api/admin/bingo-advance-song` with `x-admin-key` (see [game-music-bingo.md](./game-music-bingo.md)).
+- When advancing, clients should receive updates quickly — **SSE** (`/api/events`) with polling fallback (`ARCHITECTURE.md`).
 
 ---
 
 ## Current implementation
 
 - Key via `?key=` or input; must match `ADMIN_SECRET` (default `admin-secret`).
-- Polls `GET /api/admin/state?key=` every **1s**.
-- **Start next** → `POST /api/admin/start-next?key=` → `advancePhase()` in `src/lib/store.ts`.
-- Phase machine: `lobby` → `countdown` → `game` → `leaderboard` → next game or `final_leaderboard`.
-- **Gap:** Six placeholder games; not mapped to the **three** real games + multiple lobbies; no SSE; no dedicated “open lobby only” vs “start game” if you split steps.
+- **`GET /api/admin/state`** with `x-admin-key`; **EventSource(`/api/events`)** refreshes state, with **~2s** poll if the stream fails.
+- **Start next** → `POST /api/admin/start-next` (query `key=` and/or `x-admin-key`) → `advancePhase()` in `src/lib/store.ts`.
+- **Guest step** machine matches `GuestStep` / `GUEST_STEP_SEQUENCE` (protocol, lobbies, countdowns, three games, mid leaderboards, final) — see [ARCHITECTURE.md](./ARCHITECTURE.md).
+- **Reset session** → `POST /api/admin/reset` (rehearsal).
+- **Bingo advance song** → `POST /api/admin/bingo-advance-song` (only meaningful during `game_bingo`).
 
 ---
 
@@ -67,9 +69,11 @@ Host-only control surface (protected by shared **secret**, not user accounts). S
 ## Files likely touched
 
 - `src/components/admin/AdminPanel.tsx`
-- `src/app/api/admin/start-next/route.ts` — may accept **action** body instead of single advance
-- New `src/app/api/events/route.ts` (SSE) + publisher hook from advance
-- `src/lib/store.ts` — richer step machine
+- `src/app/api/admin/start-next/route.ts`
+- `src/app/api/admin/bingo-advance-song/route.ts`
+- `src/app/api/admin/state/route.ts`, `reset/route.ts`
+- `src/app/api/events/route.ts` (SSE)
+- `src/lib/store.ts`
 
 ---
 
