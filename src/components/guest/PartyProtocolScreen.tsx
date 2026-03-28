@@ -176,11 +176,10 @@ export default function PartyProtocolScreen({
           </p>
         </div>
         <p className="col-span-3 mt-2 text-[10px] font-medium leading-snug text-[#fef6e7]/85">
-          Until kickoff · Sat 11 Apr 2026, 8:00 PM (Barcelona) ·{" "}
+          Until kickoff · Sat 11 Apr 2026, 8:00 PM (Barcelona)
           <time dateTime={PARTY_EVENT_START_ISO} className="sr-only">
             2026-04-11T20:00:00+02:00
           </time>
-          doors open with the host from 8pm
         </p>
       </div>
 
@@ -317,12 +316,6 @@ export default function PartyProtocolScreen({
                 black, angry
               </li>
             </ul>
-            <p className="text-sm font-medium leading-relaxed text-[#605b50]">
-              Think bold colours, silly teams, and loud music between rounds.
-              Team games use <strong className="text-[#322e25]">majority</strong>{" "}
-              on phones — you&apos;ll match answers with teammates after a short
-              countdown so you know who&apos;s with you.
-            </p>
             <p className="text-xs font-semibold leading-relaxed text-[#605b50]/90">
               The theme is a bit of dress-up fun — if it stresses you out, skip
               it!
@@ -343,15 +336,11 @@ export default function PartyProtocolScreen({
           <ul className="space-y-3 text-sm font-medium">
             <li className="flex gap-3">
               <span aria-hidden>✓</span>
-              <span>Charge your phone — it’s your buzzer all night.</span>
+              <span>Charge your phone — you&apos;ll need it for the games!</span>
             </li>
             <li className="flex gap-3">
               <span aria-hidden>✓</span>
               <span>In team rounds, huddle fast when you see teammate names.</span>
-            </li>
-            <li className="flex gap-3">
-              <span aria-hidden>✓</span>
-              <span>Bingo is on your honour; have fun calling lines.</span>
             </li>
             <li className="flex gap-3 opacity-80">
               <span aria-hidden>✗</span>
