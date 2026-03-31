@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { submitQuoteVote } from "@/lib/store";
+import { resolvePlayerIdFromRequest } from "@/lib/requestPlayer";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const cookieStore = await cookies();
-  const playerId = cookieStore.get("playerId")?.value ?? null;
+  const playerId = resolvePlayerIdFromRequest(request);
   if (!playerId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

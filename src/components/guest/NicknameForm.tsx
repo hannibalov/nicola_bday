@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
-import { persistPlayerProfile } from "@/lib/clientStorage";
+import { persistGuestProfile } from "@/lib/clientStorage";
+import {
+  isProtocolTestSearchMode,
+  PROTOCOL_TEST_QP,
+  withProtocolTestQuery,
+} from "@/lib/protocolTestMode";
 
 export default function NicknameForm() {
   const [nickname, setNickname] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,11 +38,14 @@ export default function NicknameForm() {
         return;
       }
       if (data.playerId) {
-        persistPlayerProfile({
-          playerId: data.playerId,
-          nickname: value,
-        });
-        router.push("/play");
+        persistGuestProfile(
+          {
+            playerId: data.playerId,
+            nickname: value,
+          },
+          isProtocolTestSearchMode(searchParams.get(PROTOCOL_TEST_QP)),
+        );
+        router.push(withProtocolTestQuery("/play", searchParams));
         router.refresh();
       }
     } catch {

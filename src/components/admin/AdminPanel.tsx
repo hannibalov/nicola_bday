@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { GuestStep, SessionState } from "@/types";
 import { gameSlotFromGuestStep, getNextGuestStep } from "@/types";
 import { guestStepLabel, nextGuestStepLabel } from "@/lib/guestStepLabels";
+import { shouldAdminPanelUseEventSource } from "@/lib/sessionSyncTransport";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 
 function adminFetchHeaders(key: string): HeadersInit {
@@ -69,20 +70,25 @@ export default function AdminPanel() {
     fetchState();
     let es: EventSource | null = null;
     let poll: ReturnType<typeof setInterval> | null = null;
-    try {
-      es = new EventSource("/api/events");
-      es.onmessage = () => {
-        fetchState();
-      };
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (poll == null) {
-          poll = setInterval(fetchState, 2000);
-        }
-      };
-    } catch {
+    const useSse = shouldAdminPanelUseEventSource();
+    if (!useSse) {
       poll = setInterval(fetchState, 2000);
+    } else {
+      try {
+        es = new EventSource("/api/events");
+        es.onmessage = () => {
+          fetchState();
+        };
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (poll == null) {
+            poll = setInterval(fetchState, 2000);
+          }
+        };
+      } catch {
+        poll = setInterval(fetchState, 2000);
+      }
     }
     return () => {
       es?.close();

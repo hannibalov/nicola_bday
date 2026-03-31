@@ -4,13 +4,16 @@ import { NICOLA_STORAGE_PREFIX } from "@/lib/clientStorage";
 
 const mockPush = jest.fn();
 const mockRefresh = jest.fn();
+const mockSearchParams = jest.fn(() => new URLSearchParams());
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
+  useSearchParams: () => mockSearchParams(),
 }));
 
 beforeEach(() => {
   mockPush.mockClear();
   mockRefresh.mockClear();
+  mockSearchParams.mockImplementation(() => new URLSearchParams());
   global.fetch = jest.fn();
   localStorage.clear();
 });
@@ -135,6 +138,26 @@ describe("NicknameForm", () => {
     resolveSubmit(null);
     await waitFor(() => {
       expect(screen.getByLabelText(/quirky party alias/i)).not.toBeDisabled();
+    });
+  });
+
+  it("preserves protocolTest query on redirect when present in the URL", async () => {
+    mockSearchParams.mockImplementation(
+      () => new URLSearchParams("protocolTest=1&nickname=Skip"),
+    );
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ playerId: "id-z" }),
+    });
+    render(<NicknameForm />);
+    fireEvent.change(screen.getByLabelText(/quirky party alias/i), {
+      target: { value: "Manual" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /join the party/i }));
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith(
+        "/play?protocolTest=1&nickname=Skip",
+      );
     });
   });
 });

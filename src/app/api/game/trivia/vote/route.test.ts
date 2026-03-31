@@ -11,19 +11,16 @@ import {
 } from "@/lib/store";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 
-const mockCookies = new Map<string, string>();
-jest.mock("next/headers", () => ({
-  cookies: jest.fn(() =>
-    Promise.resolve({
-      get: (name: string) => ({ value: mockCookies.get(name) ?? undefined }),
-    })
-  ),
-}));
-
 beforeEach(() => {
   resetSession();
-  mockCookies.clear();
 });
+
+function authJsonHeaders(playerId: string): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    Cookie: `playerId=${encodeURIComponent(playerId)}`,
+  };
+}
 
 function advanceUntilGameTrivia() {
   registerPlayer("Alice");
@@ -51,12 +48,11 @@ describe("POST /api/game/trivia/vote", () => {
 
   it("returns 400 when trivia is not active", async () => {
     const id = registerPlayer("Bob");
-    mockCookies.set("playerId", id);
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
         method: "POST",
         body: JSON.stringify({ questionId: TRIVIA_QUESTIONS[0].id, optionIndex: 0 }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(400);
@@ -67,13 +63,12 @@ describe("POST /api/game/trivia/vote", () => {
   it("records vote during game_trivia", async () => {
     advanceUntilGameTrivia();
     const id = getSessionState().players[0]!.id;
-    mockCookies.set("playerId", id);
     const q = TRIVIA_QUESTIONS[0];
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
         method: "POST",
         body: JSON.stringify({ questionId: q.id, optionIndex: q.correctIndex }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(200);
@@ -85,12 +80,11 @@ describe("POST /api/game/trivia/vote", () => {
   it("returns 400 for unknown question id", async () => {
     advanceUntilGameTrivia();
     const id = getSessionState().players[0]!.id;
-    mockCookies.set("playerId", id);
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
         method: "POST",
         body: JSON.stringify({ questionId: "nope", optionIndex: 0 }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(400);

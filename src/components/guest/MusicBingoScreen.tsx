@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 import { bingoCardTitlesForPlayer, bingoSeedForPlayer } from "@/lib/bingoCard";
@@ -17,11 +18,8 @@ import {
   BINGO_FULL_CARD_CLAIM_KEY,
   completedBingoLineKeys,
 } from "@/lib/bingoLine";
-import {
-  getBingoLocal,
-  getPersistedPlayerId,
-  setBingoLocal,
-} from "@/lib/clientStorage";
+import { getBingoLocal, getGuestPlayerIdForClient, setBingoLocal } from "@/lib/clientStorage";
+import { useGuestApiFetch } from "./useGuestApiFetch";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -76,12 +74,14 @@ export default function MusicBingoScreen({
   );
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(() => Date.now());
+  const searchParams = useSearchParams();
+  const guestFetch = useGuestApiFetch();
 
   useLayoutEffect(() => {
     startTransition(() => {
-      setPlayerId(getPersistedPlayerId());
+      setPlayerId(getGuestPlayerIdForClient(searchParams));
     });
-  }, []);
+  }, [searchParams]);
 
   const titles = useMemo(
     () => (playerId ? bingoCardTitlesForPlayer(playerId) : []),
@@ -147,9 +147,8 @@ export default function MusicBingoScreen({
       setPendingMarkCells((s) => new Set(s).add(index));
       setError(null);
       try {
-        const res = await fetch("/api/game/bingo/mark", {
+        const res = await guestFetch("/api/game/bingo/mark", {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cellIndex: index, mark: nextMark }),
         });
@@ -184,7 +183,7 @@ export default function MusicBingoScreen({
         });
       }
     },
-    [marked, playerId]
+    [guestFetch, marked, playerId]
   );
 
   const onClaim = useCallback(async () => {
@@ -192,9 +191,8 @@ export default function MusicBingoScreen({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/game/bingo/claim", {
+      const res = await guestFetch("/api/game/bingo/claim", {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lineKeys: newLineKeys }),
       });
@@ -212,7 +210,7 @@ export default function MusicBingoScreen({
     } finally {
       setSubmitting(false);
     }
-  }, [newLineKeys, submitting]);
+  }, [guestFetch, newLineKeys, submitting]);
 
   if (!playerId) {
     return (

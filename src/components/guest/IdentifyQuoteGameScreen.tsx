@@ -11,6 +11,7 @@ import { useTeamMcqBackgroundVotes } from "@/components/game/useTeamMcqBackgroun
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import { KEYS, getLocalJson, setLocalJson } from "@/lib/clientStorage";
 import type { TeamMcqPublicSync } from "@/types";
+import { useGuestApiFetch } from "./useGuestApiFetch";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -38,16 +39,19 @@ export default function IdentifyQuoteGameScreen({
   const fontBody = "var(--font-quote-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-quote-headline), ui-sans-serif, system-ui";
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const guestFetch = useGuestApiFetch();
 
-  const postVote = useCallback(async (questionId: string, optionIndex: number) => {
-    const res = await fetch("/api/game/quotes/vote", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionId, optionIndex }),
-    });
-    return res.ok;
-  }, []);
+  const postVote = useCallback(
+    async (questionId: string, optionIndex: number) => {
+      const res = await guestFetch("/api/game/quotes/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, optionIndex }),
+      });
+      return res.ok;
+    },
+    [guestFetch],
+  );
 
   const enqueueVote = useTeamMcqBackgroundVotes(postVote);
 

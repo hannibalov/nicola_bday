@@ -3,6 +3,10 @@
  */
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import TriviaGameScreen from "./TriviaGameScreen";
+
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 import type { TeamMcqPublicSync } from "@/types";
 

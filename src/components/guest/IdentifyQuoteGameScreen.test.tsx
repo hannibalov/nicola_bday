@@ -3,6 +3,10 @@
  */
 import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import IdentifyQuoteGameScreen from "./IdentifyQuoteGameScreen";
+
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import type { TeamMcqPublicSync } from "@/types";
 

@@ -17,6 +17,7 @@ import MultipleChoicePanel from "@/components/game/MultipleChoicePanel";
 import McqRoundCountdownBar from "@/components/game/McqRoundCountdownBar";
 import { useTeamMcqRoundPhase } from "@/components/game/useTeamMcqRoundPhase";
 import { useTeamMcqBackgroundVotes } from "@/components/game/useTeamMcqBackgroundVotes";
+import { useGuestApiFetch } from "./useGuestApiFetch";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -49,16 +50,19 @@ export default function TriviaGameScreen({
   const fontHeadline = "var(--font-trivia-headline), ui-sans-serif, system-ui";
   const total = TRIVIA_QUESTIONS.length;
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const guestFetch = useGuestApiFetch();
 
-  const postVote = useCallback(async (questionId: string, optionIndex: number) => {
-    const res = await fetch("/api/game/trivia/vote", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionId, optionIndex }),
-    });
-    return res.ok;
-  }, []);
+  const postVote = useCallback(
+    async (questionId: string, optionIndex: number) => {
+      const res = await guestFetch("/api/game/trivia/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, optionIndex }),
+      });
+      return res.ok;
+    },
+    [guestFetch],
+  );
 
   const enqueueVote = useTeamMcqBackgroundVotes(postVote);
 

@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getPublicState } from "@/lib/store";
+import { resolvePlayerIdFromRequest } from "@/lib/requestPlayer";
 
-export async function GET() {
-  const cookieStore = await cookies();
-  const playerId = cookieStore.get("playerId")?.value ?? null;
+export async function GET(request: Request) {
+  const playerId = resolvePlayerIdFromRequest(request);
   const state = getPublicState(playerId);
   return NextResponse.json(state);
 }

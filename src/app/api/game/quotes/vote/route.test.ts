@@ -11,19 +11,16 @@ import {
 } from "@/lib/store";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 
-const mockCookies = new Map<string, string>();
-jest.mock("next/headers", () => ({
-  cookies: jest.fn(() =>
-    Promise.resolve({
-      get: (name: string) => ({ value: mockCookies.get(name) ?? undefined }),
-    })
-  ),
-}));
-
 beforeEach(() => {
   resetSession();
-  mockCookies.clear();
 });
+
+function authJsonHeaders(playerId: string): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    Cookie: `playerId=${encodeURIComponent(playerId)}`,
+  };
+}
 
 function advanceUntilGameQuotes() {
   registerPlayer("Alice");
@@ -54,7 +51,6 @@ describe("POST /api/game/quotes/vote", () => {
 
   it("returns 400 when quotes game is not active", async () => {
     const id = registerPlayer("Bob");
-    mockCookies.set("playerId", id);
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
         method: "POST",
@@ -62,7 +58,7 @@ describe("POST /api/game/quotes/vote", () => {
           questionId: getQuoteQuestions()[0].id,
           optionIndex: 0,
         }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(400);
@@ -73,7 +69,6 @@ describe("POST /api/game/quotes/vote", () => {
   it("records vote during game_quotes", async () => {
     advanceUntilGameQuotes();
     const id = getSessionState().players[0]!.id;
-    mockCookies.set("playerId", id);
     const q = getQuoteQuestions()[0];
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
@@ -82,7 +77,7 @@ describe("POST /api/game/quotes/vote", () => {
           questionId: q.id,
           optionIndex: q.correctIndex,
         }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(200);
@@ -94,12 +89,11 @@ describe("POST /api/game/quotes/vote", () => {
   it("returns 400 for unknown question id", async () => {
     advanceUntilGameQuotes();
     const id = getSessionState().players[0]!.id;
-    mockCookies.set("playerId", id);
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
         method: "POST",
         body: JSON.stringify({ questionId: "nope", optionIndex: 0 }),
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
       })
     );
     expect(res.status).toBe(400);

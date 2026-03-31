@@ -46,7 +46,7 @@ describe("GuestEntryFlow", () => {
     render(<GuestEntryFlow />);
     fireEvent.click(screen.getByRole("button", { name: /let's party/i }));
     await waitFor(() => {
-      expect(mockPrefetch).toHaveBeenCalledWith("/play");
+      expect(mockPrefetch).toHaveBeenCalledWith("/play?protocolTest=1");
     });
     jest.useRealTimers();
   });

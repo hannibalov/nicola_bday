@@ -44,6 +44,21 @@ function setPlayerCookie(playerId: string | null) {
   if (playerId) mockCookies.set("playerId", playerId);
 }
 
+function postJsonWithPlayerCookie(
+  path: string,
+  playerId: string,
+  body: unknown,
+): Request {
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `playerId=${encodeURIComponent(playerId)}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 async function registerViaApi(nickname: string): Promise<string> {
   const res = await postPlayers(
     new Request("http://localhost/api/players", {
@@ -59,7 +74,14 @@ async function registerViaApi(nickname: string): Promise<string> {
 }
 
 async function readPublicState(): Promise<PublicState> {
-  const res = await getState();
+  const pid = mockCookies.get("playerId");
+  const res = await getState(
+    new Request("http://localhost/api/state", {
+      headers: pid
+        ? { Cookie: `playerId=${encodeURIComponent(pid)}` }
+        : {},
+    }),
+  );
   expect(res.status).toBe(200);
   return (await res.json()) as PublicState;
 }
@@ -131,11 +153,10 @@ describe("session flow integration (HTTP + store)", () => {
     setPlayerCookie(id);
     const q = TRIVIA_QUESTIONS[0];
     const voteRes = await postTriviaVote(
-      new Request("http://localhost/api/game/trivia/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: q.id, optionIndex: q.correctIndex }),
-      })
+      postJsonWithPlayerCookie("/api/game/trivia/vote", id, {
+        questionId: q.id,
+        optionIndex: q.correctIndex,
+      }),
     );
     expect(voteRes.status).toBe(200);
 
@@ -156,14 +177,10 @@ describe("session flow integration (HTTP + store)", () => {
 
     setPlayerCookie(id);
     const res = await postTriviaVote(
-      new Request("http://localhost/api/game/trivia/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          questionId: TRIVIA_QUESTIONS[0].id,
-          optionIndex: 0,
-        }),
-      })
+      postJsonWithPlayerCookie("/api/game/trivia/vote", id, {
+        questionId: TRIVIA_QUESTIONS[0].id,
+        optionIndex: 0,
+      }),
     );
     expect(res.status).toBe(400);
   });
@@ -179,11 +196,7 @@ describe("session flow integration (HTTP + store)", () => {
     setPlayerCookie(id);
     async function markCell(cellIndex: number, mark: boolean) {
       const res = await postBingoMark(
-        new Request("http://localhost/api/game/bingo/mark", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cellIndex, mark }),
-        })
+        postJsonWithPlayerCookie("/api/game/bingo/mark", id, { cellIndex, mark }),
       );
       expect(res.status).toBe(200);
     }
@@ -194,11 +207,9 @@ describe("session flow integration (HTTP + store)", () => {
     await markCell(2, true);
 
     const claimRes = await postBingoClaim(
-      new Request("http://localhost/api/game/bingo/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
-      })
+      postJsonWithPlayerCookie("/api/game/bingo/claim", id, {
+        lineKeys: ["0,1,2"],
+      }),
     );
     expect(claimRes.status).toBe(200);
     const claimJson = (await claimRes.json()) as { awarded: number; totalForPlayer: number };
@@ -217,11 +228,10 @@ describe("session flow integration (HTTP + store)", () => {
 
     setPlayerCookie(id);
     const voteRes = await postQuoteVote(
-      new Request("http://localhost/api/game/quotes/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: q0.id, optionIndex: q0.correctIndex }),
-      })
+      postJsonWithPlayerCookie("/api/game/quotes/vote", id, {
+        questionId: q0.id,
+        optionIndex: q0.correctIndex,
+      }),
     );
     expect(voteRes.status).toBe(200);
     const pubVotes = await readPublicState();
@@ -305,11 +315,10 @@ describe("session flow integration (HTTP + store)", () => {
       for (const pid of teamA.playerIds) {
         setPlayerCookie(pid);
         const r = await postTriviaVote(
-          new Request("http://localhost/api/game/trivia/vote", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questionId: q.id, optionIndex: q.correctIndex }),
-          })
+          postJsonWithPlayerCookie("/api/game/trivia/vote", pid, {
+            questionId: q.id,
+            optionIndex: q.correctIndex,
+          }),
         );
         expect(r.status).toBe(200);
       }

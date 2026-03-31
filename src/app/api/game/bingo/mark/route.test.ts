@@ -12,20 +12,16 @@ import {
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 
-const mockCookies = new Map<string, string>();
-
-jest.mock("next/headers", () => ({
-  cookies: jest.fn(() =>
-    Promise.resolve({
-      get: (name: string) => ({ value: mockCookies.get(name) ?? undefined }),
-    })
-  ),
-}));
-
 beforeEach(() => {
   resetSession();
-  mockCookies.clear();
 });
+
+function authJsonHeaders(playerId: string): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    Cookie: `playerId=${encodeURIComponent(playerId)}`,
+  };
+}
 
 function advanceUntilGameBingo() {
   let guard = 0;
@@ -52,7 +48,6 @@ describe("POST /api/game/bingo/mark", () => {
 
   it("returns marked cells when the tile matches the current song", async () => {
     const id = registerPlayer("A");
-    mockCookies.set("playerId", id);
     advanceUntilGameBingo();
     const titles = bingoCardTitlesForPlayer(id);
     setBingoPlaybackForTests([titles[0]!], 0);
@@ -60,7 +55,7 @@ describe("POST /api/game/bingo/mark", () => {
     const res = await POST(
       new Request("http://localhost/api/game/bingo/mark", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authJsonHeaders(id),
         body: JSON.stringify({ cellIndex: 0, mark: true }),
       })
     );

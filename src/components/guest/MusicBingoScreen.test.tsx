@@ -4,6 +4,10 @@
 import type { ComponentProps } from "react";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import MusicBingoScreen from "./MusicBingoScreen";
+
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 import { BINGO_FULL_CARD_CLAIM_KEY } from "@/lib/bingoLine";
 import { KEYS } from "@/lib/clientStorage";

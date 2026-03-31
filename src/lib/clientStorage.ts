@@ -1,3 +1,10 @@
+import {
+  isProtocolTestSearchMode,
+  PROTOCOL_TEST_NICKNAME_QP,
+  PROTOCOL_TEST_QP,
+  type SearchParamsLike,
+} from "./protocolTestMode";
+
 /** localStorage keys for guest resilience (prefix matches ARCHITECTURE §7.2). */
 
 export const STORAGE_PREFIX = "nicola-bday:" as const;
@@ -15,15 +22,15 @@ export const KEYS = {
   quoteVotes: `${STORAGE_PREFIX}quoteVotes`,
 } as const;
 
-/** Cookie or localStorage backup — use on `/play` before hitting the API. */
-export function getPersistedPlayerId(): string | null {
+/** Per-tab protocol-test guest identity (`/?protocolTest=1&nickname=…`). */
+export const KEYS_PT = {
+  playerId: `${STORAGE_PREFIX}pt-playerId`,
+  nickname: `${STORAGE_PREFIX}pt-nickname`,
+} as const;
+
+/** `playerId` cookie only (no localStorage). */
+export function getCookiePlayerId(): string | null {
   if (typeof window === "undefined") return null;
-  try {
-    const fromLs = window.localStorage.getItem(KEYS.playerId);
-    if (fromLs) return fromLs;
-  } catch {
-    /* private mode */
-  }
   const match = document.cookie.match(/(?:^|;\s*)playerId=([^;]*)/);
   if (!match?.[1]) return null;
   const raw = match[1].trim();
@@ -32,6 +39,101 @@ export function getPersistedPlayerId(): string | null {
   } catch {
     return raw;
   }
+}
+
+/** Cookie or localStorage backup — use on `/play` before hitting the API (normal guests). */
+export function getPersistedPlayerId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const fromLs = window.localStorage.getItem(KEYS.playerId);
+    if (fromLs) return fromLs;
+  } catch {
+    /* private mode */
+  }
+  return getCookiePlayerId();
+}
+
+/** Identity for the current URL when `protocolTest=1` (sessionStorage, per browser tab). */
+export function persistProtocolTestPlayerProfile(profile: {
+  playerId: string;
+  nickname: string;
+}): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(KEYS_PT.playerId, profile.playerId);
+    window.sessionStorage.setItem(KEYS_PT.nickname, profile.nickname);
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function getProtocolTestPlayerProfile(): {
+  playerId: string;
+  nickname: string;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const playerId = window.sessionStorage.getItem(KEYS_PT.playerId);
+    const nickname = window.sessionStorage.getItem(KEYS_PT.nickname);
+    if (playerId && nickname) return { playerId, nickname };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearProtocolTestPlayerProfile(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(KEYS_PT.playerId);
+    window.sessionStorage.removeItem(KEYS_PT.nickname);
+  } catch {
+    /* private mode */
+  }
+}
+
+/**
+ * Player id for API calls / gating. Normal flow uses localStorage + cookie;
+ * protocol test with query params uses per-tab sessionStorage only (not
+ * localStorage) so multiple tabs can register different nicknames.
+ */
+export function getGuestPlayerIdForClient(
+  searchParams: SearchParamsLike,
+): string | null {
+  if (!isProtocolTestSearchMode(searchParams.get(PROTOCOL_TEST_QP))) {
+    return getPersistedPlayerId();
+  }
+  const urlNick = searchParams.get(PROTOCOL_TEST_NICKNAME_QP)?.trim() ?? "";
+  const pt = getProtocolTestPlayerProfile();
+  if (urlNick) {
+    if (pt && pt.nickname === urlNick) return pt.playerId;
+    return null;
+  }
+  if (pt) return pt.playerId;
+  return getCookiePlayerId();
+}
+
+export function getGuestNicknameForClient(
+  searchParams: SearchParamsLike,
+): string | null {
+  if (!isProtocolTestSearchMode(searchParams.get(PROTOCOL_TEST_QP))) {
+    return getPersistedNickname();
+  }
+  const urlNick = searchParams.get(PROTOCOL_TEST_NICKNAME_QP)?.trim() ?? "";
+  if (urlNick) return urlNick;
+  return getProtocolTestPlayerProfile()?.nickname ?? null;
+}
+
+/** After `POST /api/players` — use sessionStorage in protocol-test URLs only. */
+export function persistGuestProfile(
+  profile: { playerId: string; nickname: string },
+  protocolTestUrl: boolean,
+): void {
+  if (protocolTestUrl) {
+    persistProtocolTestPlayerProfile(profile);
+    return;
+  }
+  persistPlayerProfile(profile);
 }
 
 export function getPersistedNickname(): string | null {
@@ -143,6 +245,7 @@ export function persistPlayerProfile(profile: {
 /** After host reset or stale cookie: wipe guest identity and game cache so `/` check-in runs again. */
 export function clearGuestRegistrationForRejoin(): void {
   if (typeof window === "undefined") return;
+  clearProtocolTestPlayerProfile();
   const keys = [
     KEYS.playerId,
     KEYS.nickname,

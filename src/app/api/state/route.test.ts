@@ -3,24 +3,19 @@
  */
 import { GET } from "./route";
 import { resetSession, registerPlayer } from "@/lib/store";
-
-const mockCookies = new Map<string, string>();
-jest.mock("next/headers", () => ({
-  cookies: jest.fn(() =>
-    Promise.resolve({
-      get: (name: string) => ({ value: mockCookies.get(name) ?? undefined }),
-    })
-  ),
-}));
+import { NICOLA_PLAYER_ID_HEADER } from "@/lib/requestPlayer";
 
 beforeEach(() => {
   resetSession();
-  mockCookies.clear();
 });
+
+function stateReq(init?: RequestInit): Request {
+  return new Request("http://localhost/api/state", init);
+}
 
 describe("GET /api/state", () => {
   it("returns public state with party_protocol when no playerId cookie", async () => {
-    const res = await GET();
+    const res = await GET(stateReq());
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.guestStep).toBe("party_protocol");
@@ -31,23 +26,50 @@ describe("GET /api/state", () => {
 
   it("returns public state with playerId from cookie", async () => {
     const id = registerPlayer("Bob");
-    mockCookies.set("playerId", id);
-    const res = await GET();
+    const res = await GET(
+      stateReq({
+        headers: { Cookie: `playerId=${encodeURIComponent(id)}` },
+      }),
+    );
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.guestStep).toBe("party_protocol");
     expect(data.playerKnownToSession).toBe(true);
   });
 
+  it("under NODE_ENV=test prefers x-nicola-player-id over cookie", async () => {
+    const fromCookie = registerPlayer("Z_cookie");
+    const fromHeader = registerPlayer("Z_header");
+    const res = await GET(
+      stateReq({
+        headers: {
+          Cookie: `playerId=${encodeURIComponent(fromCookie)}`,
+          [NICOLA_PLAYER_ID_HEADER]: fromHeader,
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.playerKnownToSession).toBe(true);
+  });
+
   it("playerKnownToSession false when cookie survives host reset", async () => {
     const id = registerPlayer("Zed");
-    mockCookies.set("playerId", id);
-    let data = await (await GET()).json();
+    let res = await GET(
+      stateReq({
+        headers: { Cookie: `playerId=${encodeURIComponent(id)}` },
+      }),
+    );
+    let data = await res.json();
     expect(data.playerKnownToSession).toBe(true);
 
     resetSession();
-    mockCookies.set("playerId", id);
-    data = await (await GET()).json();
+    res = await GET(
+      stateReq({
+        headers: { Cookie: `playerId=${encodeURIComponent(id)}` },
+      }),
+    );
+    data = await res.json();
     expect(data.playerKnownToSession).toBe(false);
     expect(data.playerCount).toBe(0);
   });

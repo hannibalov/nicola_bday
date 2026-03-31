@@ -11,10 +11,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { PublicState } from "@/types";
 import {
   clearGuestRegistrationForRejoin,
-  getPersistedNickname,
+  getGuestNicknameForClient,
   hasCompletedPartyProtocol,
   setLastKnownStep,
 } from "@/lib/clientStorage";
+import { guestFetch } from "@/lib/guestFetch";
 import GuestPlayShell from "@/components/layout/GuestPlayShell";
 import WaitingLobby from "./WaitingLobby";
 import MusicBingoScreen from "./MusicBingoScreen";
@@ -25,6 +26,8 @@ import FinalLeaderboard from "./FinalLeaderboard";
 import PartyProtocolScreen from "./PartyProtocolScreen";
 import LobbyScreen from "./LobbyScreen";
 import { isProtocolGateBypassed } from "@/lib/partyProtocolGate";
+import { buildProtocolTestPreserveQuery } from "@/lib/protocolTestMode";
+import { shouldGuestPlayViewUseEventSource } from "@/lib/sessionSyncTransport";
 
 export default function PlayView() {
   const router = useRouter();
@@ -41,12 +44,12 @@ export default function PlayView() {
   useLayoutEffect(() => {
     startTransition(() => {
       setProtocolLocalComplete(hasCompletedPartyProtocol());
-      setViewerNickname(getPersistedNickname());
+      setViewerNickname(getGuestNicknameForClient(searchParams));
     });
-  }, []);
+  }, [searchParams]);
 
   const fetchState = useCallback(() => {
-    fetch("/api/state", { credentials: "include" })
+    guestFetch("/api/state", searchParams, { credentials: "include" })
       .then((res) => res.json())
       .then((data: PublicState) => {
         if (data.playerKnownToSession === false) {
@@ -60,7 +63,8 @@ export default function PlayView() {
               /* still drop local state and send guest to check-in */
             }
             clearGuestRegistrationForRejoin();
-            router.replace("/");
+            const q = buildProtocolTestPreserveQuery(searchParams);
+            router.replace(q ? `/?${q}` : "/");
           })();
           return;
         }
@@ -69,32 +73,37 @@ export default function PlayView() {
       })
       .catch(() => setState(null))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [router, searchParams]);
 
   useEffect(() => {
     fetchState();
     let poll: ReturnType<typeof setInterval> | null = null;
     let es: EventSource | null = null;
-    try {
-      es = new EventSource("/api/events");
-      es.onmessage = () => {
-        fetchState();
-      };
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (poll == null) {
-          poll = setInterval(() => fetchState(), 2000);
-        }
-      };
-    } catch {
+    const useSse = shouldGuestPlayViewUseEventSource(searchParams);
+    if (!useSse) {
       poll = setInterval(() => fetchState(), 2000);
+    } else {
+      try {
+        es = new EventSource("/api/events");
+        es.onmessage = () => {
+          fetchState();
+        };
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (poll == null) {
+            poll = setInterval(() => fetchState(), 2000);
+          }
+        };
+      } catch {
+        poll = setInterval(() => fetchState(), 2000);
+      }
     }
     return () => {
       es?.close();
       if (poll != null) clearInterval(poll);
     };
-  }, [fetchState]);
+  }, [fetchState, searchParams]);
 
   if (loading || !state) {
     const fontHeadline =
