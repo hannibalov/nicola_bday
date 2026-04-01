@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { GuestStep, SessionState } from "@/types";
 import { gameSlotFromGuestStep, getNextGuestStep } from "@/types";
 import { guestStepLabel, nextGuestStepLabel } from "@/lib/guestStepLabels";
-import { shouldAdminPanelUseEventSource } from "@/lib/sessionSyncTransport";
+import {
+  shouldAdminPanelUseEventSource,
+  parseSsePayload,
+} from "@/lib/sessionSyncTransport";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 
 function adminFetchHeaders(key: string): HeadersInit {
@@ -31,6 +34,14 @@ export default function AdminPanel() {
   const [loadingBingoSong, setLoadingBingoSong] = useState(false);
   const [loadingReset, setLoadingReset] = useState(false);
   const [justAdvanced, setJustAdvanced] = useState(false);
+
+  /**
+   * Track the last revision received from admin state so SSE messages with the
+   * same revision do not trigger unnecessary re-fetches.
+   */
+  const lastKnownRevision = useRef<number>(-1);
+  const lastKnownStep = useRef<string>("");
+
 
   useEffect(() => {
     if (keyFromUrl) {
@@ -58,9 +69,12 @@ export default function AdminPanel() {
       })
       .then((data: SessionState | null) => {
         if (data) {
+          lastKnownRevision.current = data.revision;
+          lastKnownStep.current = data.guestStep;
           setState(data);
           setAuthError(false);
         }
+
       })
       .catch(() => setState(null));
   }, [committedKey]);
@@ -71,17 +85,58 @@ export default function AdminPanel() {
     let es: EventSource | null = null;
     let poll: ReturnType<typeof setInterval> | null = null;
     const useSse = shouldAdminPanelUseEventSource();
+
     if (!useSse) {
       poll = setInterval(fetchState, 2000);
     } else {
       try {
         es = new EventSource("/api/events");
-        es.onmessage = () => {
-          fetchState();
+        es.onmessage = (ev: MessageEvent) => {
+          const payload = parseSsePayload(ev.data as string);
+          if (!payload) return;
+
+          // Optimization: update basic counters immediately from SSE without a fetch roundtrip.
+          setState((prev) => {
+            if (!prev) return null;
+            // Only update if something actually changed to avoid redundant React renders.
+            if (
+              prev.players.length === payload.playerCount &&
+              prev.revision === payload.revision &&
+              prev.guestStep === payload.guestStep
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              revision: payload.revision,
+              guestStep: payload.guestStep,
+              // We don't have the full player list here, just the count.
+              // To avoid a UI mismatch, we create a placeholder array if needed.
+              // This ensures the counter displays the live number instantly.
+              players:
+                prev.players.length === payload.playerCount
+                  ? prev.players
+                  : Array.from({ length: payload.playerCount }, (_, i) => ({
+                      id: `sse-${i}`,
+                      nickname: prev.players[i]?.nickname ?? "Connecting…",
+                    })),
+            };
+          });
+
+          // Only fetch full drill-down state if revision or step changed.
+          // Player count changes don't require full re-fetch of nicknames immediately.
+          if (
+            payload.revision > lastKnownRevision.current ||
+            payload.guestStep !== lastKnownStep.current
+          ) {
+            fetchState();
+          }
         };
+
         es.onerror = () => {
           es?.close();
           es = null;
+          // Fall back to polling; do NOT try to reopen SSE to avoid loops.
           if (poll == null) {
             poll = setInterval(fetchState, 2000);
           }
@@ -328,7 +383,7 @@ export default function AdminPanel() {
           </p>
           <p className="text-xs font-medium text-[#605b50]">
             Track {state.bingoCurrentSongIndex + 1} / {state.bingoSongOrder.length} · guests
-            only tap when this title is what’s in the room
+            only tap when this title is what&apos;s in the room
           </p>
           {state.bingoRoundEndsAtEpochMs != null ? (
             <p className="text-xs font-medium text-[#605b50]">

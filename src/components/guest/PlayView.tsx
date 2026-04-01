@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -27,7 +28,10 @@ import PartyProtocolScreen from "./PartyProtocolScreen";
 import LobbyScreen from "./LobbyScreen";
 import { isProtocolGateBypassed } from "@/lib/partyProtocolGate";
 import { buildProtocolTestPreserveQuery } from "@/lib/protocolTestMode";
-import { shouldGuestPlayViewUseEventSource } from "@/lib/sessionSyncTransport";
+import {
+  shouldGuestPlayViewUseEventSource,
+  parseSsePayload,
+} from "@/lib/sessionSyncTransport";
 
 export default function PlayView() {
   const router = useRouter();
@@ -41,6 +45,14 @@ export default function PlayView() {
     searchParams.get("protocolTest")
   );
 
+  /**
+   * Track the last revision we received from the server to avoid redundant
+   * re-fetches when an SSE message carries the same revision we already have.
+   */
+  const lastKnownRevision = useRef<number>(-1);
+  const lastKnownStep = useRef<string>("");
+
+
   useLayoutEffect(() => {
     startTransition(() => {
       setProtocolLocalComplete(hasCompletedPartyProtocol());
@@ -48,28 +60,44 @@ export default function PlayView() {
     });
   }, [searchParams]);
 
+  /**
+   * Resilience: if the server restarts, players are unknown until they re-register.
+   * To avoid booting everyone on a brief cold start or transient glitch, we only
+   * redirect after 2 consecutive 'unknown' responses.
+   */
+  const unknownSessionAttempts = useRef<number>(0);
+
   const fetchState = useCallback(() => {
     guestFetch("/api/state", searchParams, { credentials: "include" })
       .then((res) => res.json())
       .then((data: PublicState) => {
         if (data.playerKnownToSession === false) {
-          void (async () => {
-            try {
-              await fetch("/api/session/clear-player-cookie", {
-                method: "POST",
-                credentials: "include",
-              });
-            } catch {
-              /* still drop local state and send guest to check-in */
-            }
-            clearGuestRegistrationForRejoin();
-            const q = buildProtocolTestPreserveQuery(searchParams);
-            router.replace(q ? `/?${q}` : "/");
-          })();
+          unknownSessionAttempts.current += 1;
+          if (unknownSessionAttempts.current >= 2) {
+            void (async () => {
+              try {
+                await fetch("/api/session/clear-player-cookie", {
+                  method: "POST",
+                  credentials: "include",
+                });
+              } catch {
+                /* still drop local state and send guest to check-in */
+              }
+              clearGuestRegistrationForRejoin();
+              const q = buildProtocolTestPreserveQuery(searchParams);
+              router.replace(q ? `/?${q}` : "/");
+            })();
+          }
           return;
         }
+
+        // reset attempts on success
+        unknownSessionAttempts.current = 0;
+        lastKnownRevision.current = data.revision;
+        lastKnownStep.current = data.guestStep;
         setState(data);
         setLastKnownStep(data.guestStep, data.revision);
+
       })
       .catch(() => setState(null))
       .finally(() => setLoading(false));
@@ -80,17 +108,47 @@ export default function PlayView() {
     let poll: ReturnType<typeof setInterval> | null = null;
     let es: EventSource | null = null;
     const useSse = shouldGuestPlayViewUseEventSource(searchParams);
+
     if (!useSse) {
       poll = setInterval(() => fetchState(), 2000);
     } else {
       try {
         es = new EventSource("/api/events");
-        es.onmessage = () => {
-          fetchState();
+        es.onmessage = (ev: MessageEvent) => {
+          const payload = parseSsePayload(ev.data as string);
+          if (!payload) return;
+
+          // Optimization: update basic counters immediately from SSE without a fetch roundtrip.
+          setState((prev) => {
+            if (!prev) return null;
+            if (
+              prev.playerCount === payload.playerCount &&
+              prev.revision === payload.revision &&
+              prev.guestStep === payload.guestStep
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              playerCount: payload.playerCount,
+              revision: payload.revision,
+              guestStep: payload.guestStep,
+            };
+          });
+
+          // Only fetch full drill-down state if revision or step actually changed.
+          if (
+            payload.revision > lastKnownRevision.current ||
+            payload.guestStep !== lastKnownStep.current
+          ) {
+            fetchState();
+          }
         };
+
         es.onerror = () => {
           es?.close();
           es = null;
+          // Fall back to polling; do NOT try to reopen SSE to avoid loops.
           if (poll == null) {
             poll = setInterval(() => fetchState(), 2000);
           }
@@ -146,8 +204,8 @@ export default function PlayView() {
     }
     return (
       <WaitingLobby
-        title="You’re almost there"
-        subtitle="The host will open the trivia lobby when it’s time. Keep this tab handy."
+        title="You're almost there"
+        subtitle="The host will open the trivia lobby when it's time. Keep this tab handy."
       />
     );
   }

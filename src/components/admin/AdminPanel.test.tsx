@@ -1,18 +1,19 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import AdminPanel from "./AdminPanel";
 import { guestStepLabel } from "@/lib/guestStepLabels";
 
 const searchParamsMock = { keyFromUrl: "admin-secret" as string | null };
 
+const stableSearchParams = {
+  get: (name: string) => (name === "key" ? searchParamsMock.keyFromUrl : null),
+};
 jest.mock("next/navigation", () => ({
-  useSearchParams: () => ({
-    get: (name: string) => (name === "key" ? searchParamsMock.keyFromUrl : null),
-  }),
+  useSearchParams: () => stableSearchParams,
 }));
 
-const mockSessionState = (players: { id: string; nickname: string }[]) => ({
+const mockSessionState = (players: { id: string; nickname: string }[], revision = 0) => ({
   guestStep: "party_protocol" as const,
-  revision: 0,
+  revision,
   countdownRemaining: null,
   scheduledGameStartsAtEpochMs: null as number | null,
   players,
@@ -32,15 +33,28 @@ const mockSessionState = (players: { id: string; nickname: string }[]) => ({
 
 const mockFetch = jest.fn();
 
+type MockEventSource = {
+  close: jest.Mock;
+  onmessage: null | ((ev: MessageEvent) => void);
+  onerror: null | ((ev: Event) => void);
+};
+
+let lastEventSource: MockEventSource | null = null;
+
 beforeEach(() => {
   searchParamsMock.keyFromUrl = "admin-secret";
   mockFetch.mockClear();
   (globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
-  global.EventSource = jest.fn(() => ({
-    close: jest.fn(),
-    onmessage: null as null | ((ev: MessageEvent) => void),
-    onerror: null as null | ((ev: Event) => void),
-  })) as unknown as typeof EventSource;
+  lastEventSource = null;
+  global.EventSource = jest.fn(() => {
+    const es: MockEventSource = {
+      close: jest.fn(),
+      onmessage: null,
+      onerror: null,
+    };
+    lastEventSource = es;
+    return es;
+  }) as unknown as typeof EventSource;
 });
 
 describe("AdminPanel", () => {
@@ -246,5 +260,147 @@ describe("AdminPanel", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Server oops");
     });
+  });
+
+  it("SSE message with same revision does NOT trigger a new admin state fetch", async () => {
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/admin/state")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(mockSessionState([{ id: "1", nickname: "Alice" }], 3)),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${u}`));
+    });
+
+    render(<AdminPanel />);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    // Fire SSE event with the same revision
+    act(() => {
+      if (lastEventSource?.onmessage) {
+        lastEventSource.onmessage(
+          new MessageEvent("message", {
+            data: JSON.stringify({ revision: 3, guestStep: "party_protocol", playerCount: 1 }),
+          })
+        );
+      }
+    });
+
+    // Should not trigger a second fetch
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("SSE message with higher revision DOES trigger a new admin state fetch", async () => {
+    let callCount = 0;
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/admin/state")) {
+        callCount++;
+        const rev = callCount === 1 ? 3 : 4;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(mockSessionState([{ id: "1", nickname: "Alice" }], rev)),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${u}`));
+    });
+
+    render(<AdminPanel />);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      if (lastEventSource?.onmessage) {
+        lastEventSource.onmessage(
+          new MessageEvent("message", {
+            data: JSON.stringify({ revision: 4, guestStep: "party_protocol", playerCount: 2 }),
+          })
+        );
+      }
+    });
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("SSE onerror closes EventSource and no second EventSource is opened", async () => {
+    const eventSourceSpy = global.EventSource as unknown as jest.Mock;
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/admin/state")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(mockSessionState([])),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${u}`));
+    });
+
+    render(<AdminPanel />);
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+
+    const es = lastEventSource!;
+    act(() => {
+      es.onerror?.(new Event("error"));
+    });
+
+    expect(es.close).toHaveBeenCalled();
+    expect(eventSourceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates player count immediately from SSE even if revision is unchanged (no fetch)", async () => {
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/admin/state")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(mockSessionState([{ id: "1", nickname: "Alice" }], 3)),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${u}`));
+    });
+
+    render(<AdminPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-player-count")).toHaveTextContent("1");
+    });
+
+    // Fire SSE event with same revision but updated player count
+    act(() => {
+      if (lastEventSource?.onmessage) {
+        lastEventSource.onmessage(
+          new MessageEvent("message", {
+            data: JSON.stringify({ revision: 3, guestStep: "party_protocol", playerCount: 42 }),
+          })
+        );
+      }
+    });
+
+    // Count should be updated in UI immediately
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-player-count")).toHaveTextContent("42");
+    });
+
+    // Still only 1 fetch call
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

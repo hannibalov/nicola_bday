@@ -18,6 +18,7 @@ export async function GET() {
               formatSseData({
                 revision: s.revision,
                 guestStep: s.guestStep,
+                playerCount: s.players.length,
               })
             )
           );

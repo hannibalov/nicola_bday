@@ -3,14 +3,39 @@ import {
   PROTOCOL_TEST_QP,
   type SearchParamsLike,
 } from "./protocolTestMode";
+import type { GuestStep } from "@/types";
 
 /**
  * Browsers limit concurrent HTTP/1.1 connections per host (often 6). Each
  * `EventSource` holds one until closed, so many `/play` tabs can block the next
- * tab’s `fetch` (e.g. register player). Protocol-test QA uses many tabs; poll
+ * tab's `fetch` (e.g. register player). Protocol-test QA uses many tabs; poll
  * instead of SSE there. Set `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` to force polling
  * for normal guests and the admin panel too.
  */
+
+/** Payload pushed by `GET /api/events`. */
+export interface SseSessionPayload {
+  revision: number;
+  guestStep: GuestStep;
+  playerCount: number;
+}
+
+/** Parse an SSE `MessageEvent.data` string into a typed payload; returns null on parse error. */
+export function parseSsePayload(data: string): SseSessionPayload | null {
+  try {
+    const parsed = JSON.parse(data) as Partial<SseSessionPayload>;
+    if (
+      typeof parsed.revision !== "number" ||
+      typeof parsed.guestStep !== "string" ||
+      typeof parsed.playerCount !== "number"
+    ) {
+      return null;
+    }
+    return parsed as SseSessionPayload;
+  } catch {
+    return null;
+  }
+}
 
 export function shouldGuestPlayViewUseEventSource(
   searchParams: SearchParamsLike,
