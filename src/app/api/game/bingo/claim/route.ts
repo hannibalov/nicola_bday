@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const lineKeys = Array.isArray(body?.lineKeys)
       ? body.lineKeys.filter((k: unknown): k is string => typeof k === "string")
       : [];
-    const result = claimBingo(playerId, lineKeys);
+    const result = await claimBingo(playerId, lineKeys);
     if (!result) {
       return NextResponse.json({ error: "Bingo not active" }, { status: 400 });
     }

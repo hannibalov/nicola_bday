@@ -10,8 +10,11 @@ jest.mock("next/headers", () => ({
   headers: jest.fn(() => Promise.resolve({ get: () => null })),
 }));
 
-beforeEach(() => {
-  resetSession();
+// Mock Supabase
+jest.mock("@/lib/supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 describe("POST /api/admin/start-next", () => {
@@ -23,7 +26,7 @@ describe("POST /api/admin/start-next", () => {
   });
 
   it("advances guest step with key in query", async () => {
-    registerPlayer("Alice");
+    await registerPlayer("Alice");
     const res = await POST(
       new Request(
         `http://localhost/api/admin/start-next?key=${ADMIN_SECRET}`,
@@ -31,8 +34,9 @@ describe("POST /api/admin/start-next", () => {
       )
     );
     expect(res.status).toBe(200);
-    expect(getSessionState().guestStep).toBe("lobby_trivia");
-    expect(getSessionState().revision).toBe(1);
+    const state = await getSessionState();
+    expect(state.guestStep).toBe("lobby_trivia");
+    expect(state.revision).toBe(1);
   });
 
   it("accepts x-admin-key header", async () => {
@@ -40,11 +44,11 @@ describe("POST /api/admin/start-next", () => {
     (headersFn as jest.Mock).mockResolvedValueOnce({
       get: (name: string) => (name === "x-admin-key" ? ADMIN_SECRET : null),
     });
-    registerPlayer("Zed");
+    await registerPlayer("Zed");
     const res = await POST(
       new Request("http://localhost/api/admin/start-next", { method: "POST" })
     );
     expect(res.status).toBe(200);
-    expect(getSessionState().guestStep).toBe("lobby_trivia");
+    expect((await getSessionState()).guestStep).toBe("lobby_trivia");
   });
 });

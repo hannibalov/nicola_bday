@@ -12,6 +12,6 @@ export async function GET(request: Request) {
   if (key !== ADMIN_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const state = getSessionState();
+  const state = await getSessionState();
   return NextResponse.json(state);
 }

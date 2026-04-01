@@ -1,5 +1,5 @@
 /**
- * Integration: multiple route handlers against one in-memory store (mirrors production wiring).
+ * Integration: multiple route handlers against one persistent store (Supabase mock).
  * @jest-environment node
  */
 import { POST as postPlayers } from "@/app/api/players/route";
@@ -25,6 +25,9 @@ import { TEAM_MCQ_CYCLE_MS } from "@/lib/teamMcqTiming";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import { GAMES } from "@/lib/gameConfig";
 import type { PublicState } from "@/types";
+
+// Mock Supabase
+jest.mock("@/lib/supabase");
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "admin-secret";
 
@@ -98,17 +101,18 @@ async function adminStartNext(): Promise<void> {
 
 async function advanceGuestStepUntil(target: GuestStep) {
   let guard = 0;
-  while (getSessionState().guestStep !== target && guard < 50) {
+  while ((await getSessionState()).guestStep !== target && guard < 50) {
     await adminStartNext();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+    const state = await getSessionState();
+    const t = state.scheduledGameStartsAtEpochMs;
+    if (t != null) await applyDueScheduledTransitions(t + 1);
     guard++;
   }
-  expect(getSessionState().guestStep).toBe(target);
+  expect((await getSessionState()).guestStep).toBe(target);
 }
 
-beforeEach(() => {
-  resetSession();
+beforeEach(async () => {
+  await resetSession();
   mockCookies.clear();
 });
 
@@ -192,7 +196,7 @@ describe("session flow integration (HTTP + store)", () => {
     const titles = bingoCardTitlesForPlayer(id);
     const pad = "__pad__";
     const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
-    setBingoPlaybackForTests(order, 0);
+    await setBingoPlaybackForTests(order, 0);
     setPlayerCookie(id);
     async function markCell(cellIndex: number, mark: boolean) {
       const res = await postBingoMark(
@@ -201,9 +205,9 @@ describe("session flow integration (HTTP + store)", () => {
       expect(res.status).toBe(200);
     }
     await markCell(0, true);
-    setBingoPlaybackForTests(order, 1);
+    await setBingoPlaybackForTests(order, 1);
     await markCell(1, true);
-    setBingoPlaybackForTests(order, 2);
+    await setBingoPlaybackForTests(order, 2);
     await markCell(2, true);
 
     const claimRes = await postBingoClaim(
@@ -291,6 +295,7 @@ describe("session flow integration (HTTP + store)", () => {
         `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`
       )
     );
+    expect(adminRes.status).toBe(200);
     const session = (await adminRes.json()) as { players: unknown[] };
     expect(session.players).toHaveLength(0);
   });
@@ -308,8 +313,10 @@ describe("session flow integration (HTTP + store)", () => {
       ids.push(await registerViaApi(`TeamP${i}`));
     }
     await advanceGuestStepUntil("game_trivia");
-    const teamA = getSessionState().teams[0]!;
-    let t = getSessionState().teamMcqRoundStartedAtEpochMs!;
+    
+    const state = await getSessionState();
+    const teamA = state.teams[0]!;
+    let t = state.teamMcqRoundStartedAtEpochMs!;
     for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
       const q = TRIVIA_QUESTIONS[qi]!;
       for (const pid of teamA.playerIds) {
@@ -324,11 +331,12 @@ describe("session flow integration (HTTP + store)", () => {
       }
       if (qi < TRIVIA_QUESTIONS.length - 1) {
         t += TEAM_MCQ_CYCLE_MS + 1;
-        applyDueTeamMcqRoundAdvance(t);
+        await applyDueTeamMcqRoundAdvance(t);
       }
     }
     await adminStartNext();
-    const board = getSessionState().gameScores[GAMES[0].id]!;
+    const stateAfter = await getSessionState();
+    const board = stateAfter.gameScores[GAMES[0].id]!;
     const expected = TRIVIA_QUESTIONS.length * 50;
     teamA.playerIds.forEach((pid) => {
       expect(board[pid]).toBe(expected);

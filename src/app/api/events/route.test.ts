@@ -4,8 +4,11 @@
 import { GET } from "./route";
 import { advancePhase, resetSession, registerPlayer } from "@/lib/store";
 
-beforeEach(() => {
-  resetSession();
+// Mock Supabase
+jest.mock("@/lib/supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 describe("GET /api/events", () => {
@@ -30,8 +33,8 @@ describe("GET /api/events", () => {
   });
 
   it("initial SSE frame includes playerCount", async () => {
-    registerPlayer("Alice");
-    registerPlayer("Bob");
+    await registerPlayer("Alice");
+    await registerPlayer("Bob");
     const res = await GET();
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
@@ -42,17 +45,22 @@ describe("GET /api/events", () => {
     reader!.cancel();
   });
 
+  // Note: These tests might be slow due to the 1.5s polling loop in the real route.
+  // We use a longer timeout for these specific tests.
   it("pushes updated guestStep after session notify", async () => {
     const res = await GET();
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
-    await reader!.read();
-    advancePhase();
+    await reader!.read(); // initial
+    
+    await advancePhase();
+    
+    // We expect the loop to pick up the change eventually
     const second = await reader!.read();
     expect(second.done).toBe(false);
     expect(decoder.decode(second.value)).toContain("lobby_trivia");
     reader!.cancel();
-  });
+  }, 10000);
 
   it("SSE frame after player registers includes updated playerCount", async () => {
     const res = await GET();
@@ -60,11 +68,11 @@ describe("GET /api/events", () => {
     const decoder = new TextDecoder();
     await reader!.read(); // consume initial
 
-    registerPlayer("NewPlayer");
+    await registerPlayer("NewPlayer");
     const { value } = await reader!.read();
     const text = decoder.decode(value);
     const parsed = JSON.parse(text.replace(/^data: /, "").trim()) as Record<string, unknown>;
     expect(parsed.playerCount).toBe(1);
     reader!.cancel();
-  });
+  }, 10000);
 });

@@ -11,6 +11,6 @@ export async function POST(request: Request) {
   if (key !== ADMIN_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  resetSession();
+  await resetSession();
   return NextResponse.json({ ok: true });
 }

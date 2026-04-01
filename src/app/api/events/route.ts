@@ -10,9 +10,9 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = () => {
+      const send = async () => {
         try {
-          const s = getSessionState();
+          const s = await getSessionState();
           controller.enqueue(
             encoder.encode(
               formatSseData({

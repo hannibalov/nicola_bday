@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     const mark = markRaw;
-    const result = markBingoCell(playerId, cellIndex, mark);
+    const result = await markBingoCell(playerId, cellIndex, mark);
     if (!result.ok) {
       const status = result.error === "not_active" ? 400 : 400;
       return NextResponse.json({ error: result.error }, { status });

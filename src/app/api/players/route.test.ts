@@ -8,8 +8,10 @@ jest.mock("next/headers", () => ({
   cookies: jest.fn(),
 }));
 
-beforeEach(() => {
-  resetSession();
+jest.mock("@/lib/supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 describe("POST /api/players", () => {

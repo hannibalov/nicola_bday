@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     if (questionId == null || typeof optionIndex !== "number") {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    const result = submitTriviaVote(playerId, questionId, optionIndex);
+    const result = await submitTriviaVote(playerId, questionId, optionIndex);
     if (!result.ok) {
       const status =
         result.error === "not_active"

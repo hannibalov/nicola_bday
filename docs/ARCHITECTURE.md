@@ -8,12 +8,12 @@ This document describes the **product flow** (from spec), the **implemented code
 
 ## 1. Product summary
 
-Mobile-first web app for a birthday party: **no authentication**, **no database**. Two roles:
+Mobile-first web app for a birthday party: **no authentication**, **Supabase for shared state**. Two roles:
 
 - **Guest (player):** joins with a quirky nickname, reads party info, waits for the host, then plays games in sequence with updates when the host advances the session.
 - **Admin (host):** opens a protected panel, sees how many players are connected, and advances the **global guest step** so every device stays aligned.
 
-**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **Server-Sent Events (SSE)** push session changes with **polling fallback** if the event stream fails.
+**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **Server-Sent Events (SSE)** push session changes with **polling fallback** if the event stream fails. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
 
 ---
 
@@ -66,10 +66,9 @@ Guest screens live under **`src/components/guest/`**, shared chrome under **`src
 
 ## 4. Tech stack (current)
 
-| Layer | Choice |
-|-------|--------|
 | Framework | Next.js 16 (App Router) |
 | UI | React 19, Tailwind CSS 4 |
+| Persistence | **Supabase** (JSONB store for session state) |
 | Language | TypeScript |
 | Tests | Jest, React Testing Library; Playwright for E2E (`yarn test:e2e`) |
 | Lint | ESLint (Next.js config) — **mandatory green lint** before finishing a task ([Section 12](#lint)) |
@@ -78,7 +77,7 @@ Guest screens live under **`src/components/guest/`**, shared chrome under **`src
 
 ## 5. Implementation snapshot (current)
 
-The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, game lobbies, majority-based team scoring, SSE, and localStorage helpers. In-memory server state remains **per Node/serverless instance** (same limitation as before).
+The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, game lobbies, majority-based team scoring, SSE, and localStorage helpers. Server state is persisted in **Supabase** to ensure consistency across multiple serverless instances (eliminating the "unknown player" issue on Vercel).
 
 ### 5.1 Routes
 
@@ -105,13 +104,14 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
 
-**Real-time:** `PlayView` and `AdminPanel` open **`EventSource('/api/events')`** and refetch state on each message; on error they **close the stream and poll every ~2s**. In-process `sessionNotify` fan-out works for **single-instance** deploys only; see [Section 7.3](#73-server-sent-events-and-multi-instance-deploys).
+**Real-time:** `PlayView` and `AdminPanel` open **`EventSource('/api/events')`** and refetch state on each message; on error they **close the stream and poll every ~2s**. The SSE implementation monitors for **revision changes** in Supabase, allowing it to work reliably across multiple Vercel Lambda instances.
 
 <a id="server-state"></a>
 
 ### 5.3 Server state (`src/lib/store.ts`)
 
-- Held in **`globalThis.__nicola_store`** — not durable across cold starts or multiple instances.
+- Persisted in **Supabase** (`session_store` table) as a single JSONB row.
+- **Async store:** All store access and mutation functions are `async` and perform `getStoreState` (select) and `commitState` (upsert) operations.
 - **Step model:** `guestStep: GuestStep` with ordered transitions via `getNextGuestStep()`; initial step **`party_protocol`**.
 - **Teams:** `rebuildTeams()` runs when entering **`lobby_trivia`** and again when entering **`countdown_quotes`** so quote teams are **independent** from trivia teams. Chunk size **7** players per team (`Team 1`, …).
 - **Games:** `src/lib/gameConfig.ts` — three games: team trivia, music bingo, team quotes (`GAMES[0]…[2]`).
@@ -160,7 +160,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | Topic | Detail |
 |-------|--------|
 | Countdown vs host | Countdown is **visual** on the client; **advancement** to the game is **manual** via admin “Start next,” not automatic when the timer reaches 0. |
-| Deploy scale-out | SSE subscribers are **in-process**; multiple serverless instances do not share events — use sticky sessions or an external pub/sub if you scale horizontally ([Section 7.3](#73-server-sent-events-and-multi-instance-deploys)). |
+| Deploy scale-out | State is shared via Supabase. SSE clients are notified of updates via a revision-check loop in the stream handler, making it scale-out safe. |
 | Team size | Implementation uses **7** players per chunk; spec said ~6–7 — acceptable fixed choice. |
 | Empty / partial team votes | Majority logic only awards points when a team choice is resolved and matches correct; edge cases are covered in `majorityVote` / trivia scoring tests. |
 
@@ -195,10 +195,8 @@ localStorage keys are centralized in `clientStorage.ts`. On load: hydrate from l
 
 **Production HTTP cache:** [`next.config.ts`](../next.config.ts) sets long-lived `Cache-Control` in **production** only for `/_next/static/*` (immutable, fingerprinted assets) and `/images/*` so repeat visits and reloads reuse JS/CSS/fonts and party images without hammering the origin.
 
-### 7.3 Server-Sent Events and multi-instance deploys
-
-- Today: `subscribeSessionChanged` in `sessionNotify.ts` notifies all open SSE connections in the **same process**.
-- If you need **multiple** Node instances: add Redis (or similar) pub/sub for `notifySessionChanged`, or run a **single** instance for the live event.
+- Today: The SSE route handler (`/api/events`) polls the Supabase `session_store` for revision changes every ~1-2 seconds and pushes a message only when the revision increments.
+- Benefit: This works across any number of serverless instances without needing a separate Pub/Sub service like Redis.
 
 ### 7.4 Team majority voting
 
@@ -303,7 +301,9 @@ Detailed briefs for parallel work. **Each brief includes mandatory `## TDD (requ
 
 ## 10. Environment
 
-- **`ADMIN_SECRET`** — protects admin API and panel (default `admin-secret` in code; override in production).
+- **`ADMIN_SECRET`** — protects admin API and panel (default `admin-secret`).
+- **`NEXT_PUBLIC_SUPABASE_URL`** — your Supabase project URL.
+- **`SUPABASE_SECRET_KEY`** — your Supabase **service_role** key (bypasses RLS).
 
 ---
 

@@ -37,6 +37,7 @@ import {
   TEAM_MCQ_CYCLE_MS,
   TEAM_MCQ_REVEAL_MS,
 } from "./teamMcqTiming";
+import { supabase } from "./supabase";
 
 const BINGO_GAME_ID = GAMES[1]?.id ?? "game-bingo";
 const TRIVIA_GAME_ID = GAMES[0]?.id ?? "game-trivia";
@@ -76,11 +77,19 @@ const LOBBY_STEPS_WITH_SCHEDULE: readonly GuestStep[] = [
   "lobby_quotes",
 ];
 
-const globalForStore = globalThis as unknown as { __nicola_store?: SessionState };
+/** 
+ * Fetches the shared session state from Supabase.
+ * In a production Vercel environment, this ensures all Lambda instances stay in sync.
+ */
+async function getStoreState(): Promise<SessionState> {
+  const { data, error } = await supabase
+    .from("session_store")
+    .select("data")
+    .eq("id", 1)
+    .single();
 
-function getState(): SessionState {
-  if (!globalForStore.__nicola_store) {
-    globalForStore.__nicola_store = {
+  if (error || !data) {
+    return {
       ...INITIAL_STATE,
       games: [...GAMES],
       players: [],
@@ -94,35 +103,24 @@ function getState(): SessionState {
       teamMcqRoundStartedAtEpochMs: null,
     };
   }
-  const s = globalForStore.__nicola_store;
-  if (!s.triviaVotesByPlayer) {
-    s.triviaVotesByPlayer = {};
-  }
-  if (!s.quoteVotesByPlayer) {
-    s.quoteVotesByPlayer = {};
-  }
-  if (!s.bingoMarkedByPlayer) {
-    s.bingoMarkedByPlayer = {};
-  }
-  if (!s.bingoSongOrder) {
-    s.bingoSongOrder = [];
-  }
-  if (s.bingoCurrentSongIndex === undefined) {
-    s.bingoCurrentSongIndex = 0;
-  }
-  if (s.bingoRoundEndsAtEpochMs === undefined) {
-    s.bingoRoundEndsAtEpochMs = null;
-  }
-  if (s.scheduledGameStartsAtEpochMs === undefined) {
-    s.scheduledGameStartsAtEpochMs = null;
-  }
-  if (s.teamMcqRoundIndex === undefined) {
-    s.teamMcqRoundIndex = 0;
-  }
-  if (s.teamMcqRoundStartedAtEpochMs === undefined) {
-    s.teamMcqRoundStartedAtEpochMs = null;
-  }
+
+  const s = data.data as SessionState;
+  
+  // Ensure non-null objects for maps/sets
+  if (!s.triviaVotesByPlayer) s.triviaVotesByPlayer = {};
+  if (!s.quoteVotesByPlayer) s.quoteVotesByPlayer = {};
+  if (!s.bingoMarkedByPlayer) s.bingoMarkedByPlayer = {};
+  if (!s.bingoSongOrder) s.bingoSongOrder = [];
+  if (s.bingoCurrentSongIndex === undefined) s.bingoCurrentSongIndex = 0;
+  
   return s;
+}
+
+/** Persists the modified state back to the shared Supabase table. */
+async function commitState(state: SessionState): Promise<void> {
+  await supabase
+    .from("session_store")
+    .upsert({ id: 1, data: state, last_revision: state.revision });
 }
 
 function generateId(): string {
@@ -136,19 +134,28 @@ function shuffle<T>(arr: T[]): void {
   }
 }
 
-export function rebuildTeams(): void {
-  const state = getState();
+/** Helper to update teams in a state object before committing. */
+async function internalRebuildTeams(state: SessionState): Promise<void> {
   const ids = [...state.players].map((p) => p.id);
   shuffle(ids);
   state.teams = teamsFromShuffledPlayerIds(ids);
 }
 
-/**
- * Applies lobby → game transition when {@link SessionState.scheduledGameStartsAtEpochMs} is in the past.
- * Call from any read path so serverless requests advance the step without a background job.
+export async function rebuildTeams(): Promise<void> {
+  const state = await getStoreState();
+  await internalRebuildTeams(state);
+  await commitState(state);
+  notifySessionChanged();
+}
+
+/** 
+ * Checks and apply any due step advances (lobby -> game) based on scheduled timestamps.
+ * Returns the potentially updated state.
  */
-export function applyDueScheduledTransitions(nowMs: number = Date.now()): void {
-  const state = getState();
+export async function applyDueScheduledTransitions(
+  nowMs: number = Date.now(),
+): Promise<void> {
+  const state = await getStoreState();
   if (state.scheduledGameStartsAtEpochMs == null) return;
   if (!LOBBY_STEPS_WITH_SCHEDULE.includes(state.guestStep)) return;
   if (nowMs < state.scheduledGameStartsAtEpochMs) return;
@@ -161,46 +168,49 @@ export function applyDueScheduledTransitions(nowMs: number = Date.now()): void {
         ? "game_bingo"
         : "game_quotes";
 
-  applyTransitionSideEffects(from, to);
+  await applyTransitionSideEffects(state, from, to);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.countdownRemaining = null;
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
 }
 
-/**
- * Ends music bingo when the round timer expires; snapshot scores via {@link applyTransitionSideEffects}.
+/** 
+ * Checks and apply any due bingo round ends.
  */
-export function applyDueBingoRoundEnd(nowMs: number = Date.now()): void {
-  const state = getState();
+export async function applyDueBingoRoundEnd(nowMs: number = Date.now()): Promise<void> {
+  const state = await getStoreState();
   if (state.guestStep !== "game_bingo") return;
   if (state.bingoRoundEndsAtEpochMs == null) return;
   if (nowMs < state.bingoRoundEndsAtEpochMs) return;
 
   const from = state.guestStep;
   const to = "leaderboard_post_bingo" as const;
-  applyTransitionSideEffects(from, to);
+  await applyTransitionSideEffects(state, from, to);
   state.guestStep = to;
   state.bingoRoundEndsAtEpochMs = null;
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
 }
 
 /**
- * Advances trivia / quotes MCQ rounds on a fixed server timeline so all clients stay aligned.
- * Call from any read path (same pattern as {@link applyDueScheduledTransitions}).
+ * Advances trivia / quotes MCQ rounds on a fixed server timeline.
  */
-export function applyDueTeamMcqRoundAdvance(nowMs: number = Date.now()): void {
-  const state = getState();
+export async function applyDueTeamMcqRoundAdvance(nowMs: number = Date.now()): Promise<void> {
+  const state = await getStoreState();
   const step = state.guestStep;
   if (step !== "game_trivia" && step !== "game_quotes") {
     return;
   }
+  
   if (state.teamMcqRoundStartedAtEpochMs == null) {
     state.teamMcqRoundStartedAtEpochMs = nowMs;
     state.teamMcqRoundIndex = 0;
     state.revision += 1;
+    await commitState(state);
     notifySessionChanged();
     return;
   }
@@ -209,6 +219,7 @@ export function applyDueTeamMcqRoundAdvance(nowMs: number = Date.now()): void {
     step === "game_trivia"
       ? TRIVIA_QUESTIONS.length
       : getQuoteQuestions().length;
+      
   let changed = false;
   while (
     state.teamMcqRoundIndex < total - 1 &&
@@ -221,6 +232,7 @@ export function applyDueTeamMcqRoundAdvance(nowMs: number = Date.now()): void {
 
   if (changed) {
     state.revision += 1;
+    await commitState(state);
     notifySessionChanged();
   }
 }
@@ -244,9 +256,7 @@ function lobbyTeamsFromSession(state: SessionState): LobbyTeamRoster[] {
   }));
 }
 
-function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
-  const state = getState();
-
+async function applyTransitionSideEffects(state: SessionState, from: GuestStep, to: GuestStep): Promise<void> {
   if (from === "game_bingo" && to !== "game_bingo") {
     state.bingoRoundEndsAtEpochMs = null;
     state.bingoSongOrder = [];
@@ -258,19 +268,11 @@ function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
     state.scheduledGameStartsAtEpochMs = null;
   }
 
-  if (to === "lobby_trivia") {
-    rebuildTeams();
+  if (to === "lobby_trivia" || to === "lobby_quotes") {
+    await internalRebuildTeams(state);
   }
 
-  if (to === "lobby_quotes") {
-    rebuildTeams();
-  }
-
-  if (
-    to === "game_trivia" ||
-    to === "game_bingo" ||
-    to === "game_quotes"
-  ) {
+  if (to === "game_trivia" || to === "game_bingo" || to === "game_quotes") {
     state.countdownRemaining = null;
   }
 
@@ -298,23 +300,17 @@ function applyTransitionSideEffects(from: GuestStep, to: GuestStep): void {
   }
 
   if (to === "leaderboard_post_trivia") {
-    recordRoundScoresForCompletedGame(0);
+    recordRoundScoresForCompletedGame(state, 0);
   }
   if (to === "leaderboard_post_bingo") {
-    recordRoundScoresForCompletedGame(1);
+    recordRoundScoresForCompletedGame(state, 1);
   }
   if (to === "leaderboard_final") {
-    recordRoundScoresForCompletedGame(2);
+    recordRoundScoresForCompletedGame(state, 2);
   }
 }
 
-/**
- * Persists per-player scores for the round that just ended.
- * Deterministic placeholder until trivia/bingo/quote flows commit real points.
- * Team games: one score per team, copied to every member (product spec).
- */
-function recordRoundScoresForCompletedGame(gameSlotIndex: number): void {
-  const state = getState();
+function recordRoundScoresForCompletedGame(state: SessionState, gameSlotIndex: number): void {
   const game = GAMES[gameSlotIndex];
   if (!game) return;
   const scores: Record<string, number> = {};
@@ -325,6 +321,7 @@ function recordRoundScoresForCompletedGame(gameSlotIndex: number): void {
         scores[p.id] = prior[p.id] ?? 0;
       });
     } else {
+      // Mock scores for individual games other than bingo
       const byId = [...state.players].sort((a, b) => a.id.localeCompare(b.id));
       byId.forEach((p, i) => {
         scores[p.id] = 400 - i * 25;
@@ -337,9 +334,7 @@ function recordRoundScoresForCompletedGame(gameSlotIndex: number): void {
       state.triviaVotesByPlayer,
       TRIVIA_QUESTIONS.map((q) => ({ id: q.id, correctIndex: q.correctIndex }))
     );
-    state.players.forEach((p) => {
-      scores[p.id] = computed[p.id] ?? 0;
-    });
+    state.players.forEach((p) => { scores[p.id] = computed[p.id] ?? 0; });
   } else if (game.id === QUOTES_GAME_ID) {
     const questions = getQuoteQuestions();
     const computed = computeTriviaScoresFromVotes(
@@ -348,23 +343,16 @@ function recordRoundScoresForCompletedGame(gameSlotIndex: number): void {
       state.quoteVotesByPlayer,
       questions.map((q) => ({ id: q.id, correctIndex: q.correctIndex }))
     );
-    state.players.forEach((p) => {
-      scores[p.id] = computed[p.id] ?? 0;
-    });
+    state.players.forEach((p) => { scores[p.id] = computed[p.id] ?? 0; });
   } else {
+    // Team games default scoring
     const teams = [...state.teams].sort((a, b) => a.id.localeCompare(b.id));
     teams.forEach((t, ti) => {
-      const teamPts = 300 + ti * 75 + teamPlayerCount(t) * 10;
-      t.playerIds.forEach((pid) => {
-        scores[pid] = teamPts;
-      });
+      const teamPts = 300 + ti * 75 + t.playerIds.length * 10;
+      t.playerIds.forEach((pid) => { scores[pid] = teamPts; });
     });
   }
   state.gameScores[game.id] = scores;
-}
-
-function teamPlayerCount(t: Team): number {
-  return t.playerIds.length;
 }
 
 function normalizedBingoMarks(m: boolean[] | undefined): boolean[] {
@@ -374,21 +362,14 @@ function normalizedBingoMarks(m: boolean[] | undefined): boolean[] {
   return [...m];
 }
 
-function bingoLineFullyMarkedOnServer(
-  state: SessionState,
-  playerId: string,
-  lineKey: string
-): boolean {
+function bingoLineFullyMarkedOnServer(state: SessionState, playerId: string, lineKey: string): boolean {
   const idx = bingoIndicesForLineKey(lineKey);
   if (!idx) return false;
   const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
   return idx.every((i) => marks[i]);
 }
 
-function bingoFullCardMarkedOnServer(
-  state: SessionState,
-  playerId: string
-): boolean {
+function bingoFullCardMarkedOnServer(state: SessionState, playerId: string): boolean {
   const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
   return marks.every(Boolean);
 }
@@ -396,15 +377,11 @@ function bingoFullCardMarkedOnServer(
 function currentBingoSongTitle(state: SessionState): string | null {
   const order = state.bingoSongOrder;
   if (!order.length) return null;
-  const i = Math.min(
-    Math.max(0, state.bingoCurrentSongIndex),
-    order.length - 1
-  );
+  const i = Math.min(Math.max(0, state.bingoCurrentSongIndex), order.length - 1);
   return order[i] ?? null;
 }
 
-function getLeaderboardForGameSlot(slot: number): { name: string; score: number }[] {
-  const state = getState();
+function getLeaderboardForGameSlot(state: SessionState, slot: number): { name: string; score: number }[] {
   const game = GAMES[slot] ?? null;
   if (!game || !state.gameScores[game.id]) return [];
   const scores = state.gameScores[game.id]!;
@@ -421,18 +398,13 @@ function getLeaderboardForGameSlot(slot: number): { name: string; score: number 
   );
 }
 
-function getFinalLeaderboard(): { nickname: string; totalScore: number }[] {
-  const state = getState();
+function getFinalLeaderboard(state: SessionState): { nickname: string; totalScore: number }[] {
   const totals: Record<string, number> = {};
-  state.players.forEach((p) => {
-    totals[p.id] = 0;
-  });
+  state.players.forEach((p) => { totals[p.id] = 0; });
   GAMES.forEach((game) => {
     const scores = state.gameScores[game.id];
     if (!scores) return;
-    state.players.forEach((p) => {
-      totals[p.id] += scores[p.id] ?? 0;
-    });
+    state.players.forEach((p) => { totals[p.id] += scores[p.id] ?? 0; });
   });
   return sortLeaderboardEntries(
     state.players.map((p) => ({
@@ -448,60 +420,37 @@ export type BingoClaimResult = {
   claimedLineKeys: string[];
 };
 
-/**
- * Awards points for newly completed bingo rows/columns and optional full-card bonus
- * (honor system; geometric line keys must be valid).
- */
-export function claimBingo(
-  playerId: string,
-  lineKeys: string[]
-): BingoClaimResult | null {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
+export async function claimBingo(playerId: string, lineKeys: string[]): Promise<BingoClaimResult | null> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
   if (state.guestStep !== "game_bingo") return null;
   if (!state.players.some((p) => p.id === playerId)) return null;
 
   const unique = [...new Set(lineKeys)];
   const priorClaimed = state.bingoClaimedLineKeysByPlayer[playerId] ?? [];
   const validNewLines = unique.filter(
-    (k) =>
-      BINGO_VALID_LINE_KEYS.has(k) &&
-      !priorClaimed.includes(k) &&
-      bingoLineFullyMarkedOnServer(state, playerId, k)
+    (k) => BINGO_VALID_LINE_KEYS.has(k) && !priorClaimed.includes(k) && bingoLineFullyMarkedOnServer(state, playerId, k)
   );
-  const fullNew =
-    unique.includes(BINGO_FULL_CARD_CLAIM_KEY) &&
-    !priorClaimed.includes(BINGO_FULL_CARD_CLAIM_KEY) &&
-    bingoFullCardMarkedOnServer(state, playerId);
+  const fullNew = unique.includes(BINGO_FULL_CARD_CLAIM_KEY) && !priorClaimed.includes(BINGO_FULL_CARD_CLAIM_KEY) && bingoFullCardMarkedOnServer(state, playerId);
 
   if (validNewLines.length === 0 && !fullNew) {
     const cur = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
-    return {
-      awarded: 0,
-      totalForPlayer: cur,
-      claimedLineKeys: [...priorClaimed],
-    };
+    return { awarded: 0, totalForPlayer: cur, claimedLineKeys: [...priorClaimed] };
   }
 
-  if (!state.gameScores[BINGO_GAME_ID]) {
-    state.gameScores[BINGO_GAME_ID] = {};
-  }
+  if (!state.gameScores[BINGO_GAME_ID]) state.gameScores[BINGO_GAME_ID] = {};
   const prev = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
-  const lineDelta = validNewLines.reduce(
-    (sum, k) => sum + bingoPointsForValidLineKey(k),
-    0
-  );
+  const lineDelta = validNewLines.reduce((sum, k) => sum + bingoPointsForValidLineKey(k), 0);
   const delta = lineDelta + (fullNew ? BINGO_POINTS_FULL_CARD : 0);
+  
   state.gameScores[BINGO_GAME_ID]![playerId] = prev + delta;
-  state.bingoClaimedLineKeysByPlayer[playerId] = [
-    ...priorClaimed,
-    ...validNewLines,
-    ...(fullNew ? [BINGO_FULL_CARD_CLAIM_KEY] : []),
-  ];
+  state.bingoClaimedLineKeysByPlayer[playerId] = [...priorClaimed, ...validNewLines, ...(fullNew ? [BINGO_FULL_CARD_CLAIM_KEY] : [])];
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
+  
   return {
     awarded: delta,
     totalForPlayer: state.gameScores[BINGO_GAME_ID]![playerId]!,
@@ -511,51 +460,23 @@ export function claimBingo(
 
 export type BingoMarkResult =
   | { ok: true; marked: boolean[]; score: number; wrongTapPenalty: boolean }
-  | {
-      ok: false;
-      error: "not_active" | "unknown_player" | "bad_cell" | "no_song";
-    };
+  | { ok: false; error: "not_active" | "unknown_player" | "bad_cell" | "no_song" };
 
-/** Test helper: control the shuffled playlist and playhead (used by `store.test.ts`). */
-export function setBingoPlaybackForTests(order: string[], index: number): void {
-  const state = getState();
-  state.bingoSongOrder = [...order];
-  state.bingoCurrentSongIndex = index;
-}
-
-/**
- * Mark or unmark a bingo cell. Turning a cell on is allowed only when its title
- * matches the server’s current song; otherwise the player loses {@link BINGO_WRONG_TAP_PENALTY}.
- */
-export function markBingoCell(
-  playerId: string,
-  cellIndex: number,
-  mark: boolean
-): BingoMarkResult {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
-  if (state.guestStep !== "game_bingo") {
-    return { ok: false, error: "not_active" };
-  }
-  if (!state.players.some((p) => p.id === playerId)) {
-    return { ok: false, error: "unknown_player" };
-  }
-  if (
-    !Number.isInteger(cellIndex) ||
-    cellIndex < 0 ||
-    cellIndex >= BINGO_CELL_COUNT
-  ) {
-    return { ok: false, error: "bad_cell" };
-  }
+export async function markBingoCell(playerId: string, cellIndex: number, mark: boolean): Promise<BingoMarkResult> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
+  if (state.guestStep !== "game_bingo") return { ok: false, error: "not_active" };
+  if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
+  if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= BINGO_CELL_COUNT) return { ok: false, error: "bad_cell" };
 
   const marks = normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]);
-
   if (!mark) {
     marks[cellIndex] = false;
     state.bingoMarkedByPlayer[playerId] = marks;
     state.revision += 1;
+    await commitState(state);
     notifySessionChanged();
     const score = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
     return { ok: true, marked: marks, score, wrongTapPenalty: false };
@@ -567,19 +488,15 @@ export function markBingoCell(
   }
 
   const current = currentBingoSongTitle(state);
-  if (!current) {
-    return { ok: false, error: "no_song" };
-  }
+  if (!current) return { ok: false, error: "no_song" };
 
   const cellTitle = bingoCardTitlesForPlayer(playerId)[cellIndex];
   if (cellTitle !== current) {
-    if (!state.gameScores[BINGO_GAME_ID]) {
-      state.gameScores[BINGO_GAME_ID] = {};
-    }
+    if (!state.gameScores[BINGO_GAME_ID]) state.gameScores[BINGO_GAME_ID] = {};
     const prev = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
-    state.gameScores[BINGO_GAME_ID]![playerId] =
-      prev - BINGO_WRONG_TAP_PENALTY;
+    state.gameScores[BINGO_GAME_ID]![playerId] = prev - BINGO_WRONG_TAP_PENALTY;
     state.revision += 1;
+    await commitState(state);
     notifySessionChanged();
     const score = state.gameScores[BINGO_GAME_ID]![playerId] ?? 0;
     return { ok: true, marked: marks, score, wrongTapPenalty: true };
@@ -588,130 +505,89 @@ export function markBingoCell(
   marks[cellIndex] = true;
   state.bingoMarkedByPlayer[playerId] = marks;
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
   const score = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
   return { ok: true, marked: marks, score, wrongTapPenalty: false };
 }
 
-export type AdminBingoAdvanceResult =
-  | { ok: true }
-  | { ok: false; error: "not_bingo" | "at_end" };
+export type AdminBingoAdvanceResult = | { ok: true } | { ok: false; error: "not_active" | "at_end" };
 
-export function adminAdvanceBingoSong(): AdminBingoAdvanceResult {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
-  if (state.guestStep !== "game_bingo") {
-    return { ok: false, error: "not_bingo" };
-  }
+export async function adminAdvanceBingoSong(): Promise<AdminBingoAdvanceResult> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
+  if (state.guestStep !== "game_bingo") return { ok: false, error: "not_active" };
   const max = state.bingoSongOrder.length - 1;
-  if (state.bingoCurrentSongIndex >= max) {
-    return { ok: false, error: "at_end" };
-  }
+  if (state.bingoCurrentSongIndex >= max) return { ok: false, error: "at_end" };
   state.bingoCurrentSongIndex += 1;
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
   return { ok: true };
 }
 
-export type TriviaVoteResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error:
-        | "not_active"
-        | "unknown_player"
-        | "bad_question"
-        | "bad_option"
-        | "wrong_question";
-    };
+export type TriviaVoteResult = | { ok: true } | { ok: false; error: "not_active" | "unknown_player" | "bad_question" | "bad_option" | "wrong_question" };
 
-export function submitTriviaVote(
-  playerId: string,
-  questionId: string,
-  optionIndex: number
-): TriviaVoteResult {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
-  if (state.guestStep !== "game_trivia") {
-    return { ok: false, error: "not_active" };
-  }
-  if (!state.players.some((p) => p.id === playerId)) {
-    return { ok: false, error: "unknown_player" };
-  }
-  if (!TRIVIA_QUESTION_IDS.has(questionId)) {
-    return { ok: false, error: "bad_question" };
-  }
-  if (!isValidTriviaOptionIndex(optionIndex)) {
-    return { ok: false, error: "bad_option" };
-  }
+export async function submitTriviaVote(playerId: string, questionId: string, optionIndex: number): Promise<TriviaVoteResult> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
+  if (state.guestStep !== "game_trivia") return { ok: false, error: "not_active" };
+  if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
+  if (!TRIVIA_QUESTION_IDS.has(questionId)) return { ok: false, error: "bad_question" };
+  if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
+  
   const activeId = activeTeamMcqQuestionId(state);
-  if (questionId !== activeId) {
-    return { ok: false, error: "wrong_question" };
-  }
+  if (questionId !== activeId) return { ok: false, error: "wrong_question" };
+  
   const prev = state.triviaVotesByPlayer[playerId] ?? {};
   state.triviaVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
+  state.revision += 1;
+  await commitState(state);
+  notifySessionChanged();
   return { ok: true };
 }
 
-export type QuoteVoteResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error:
-        | "not_active"
-        | "unknown_player"
-        | "bad_question"
-        | "bad_option"
-        | "wrong_question";
-    };
+export type QuoteVoteResult = | { ok: true } | { ok: false; error: "not_active" | "unknown_player" | "bad_question" | "bad_option" | "wrong_question" };
 
-export function submitQuoteVote(
-  playerId: string,
-  questionId: string,
-  optionIndex: number
-): QuoteVoteResult {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
-  if (state.guestStep !== "game_quotes") {
-    return { ok: false, error: "not_active" };
-  }
-  if (!state.players.some((p) => p.id === playerId)) {
-    return { ok: false, error: "unknown_player" };
-  }
-  if (!quoteQuestionIds().has(questionId)) {
-    return { ok: false, error: "bad_question" };
-  }
-  if (!isValidTriviaOptionIndex(optionIndex)) {
-    return { ok: false, error: "bad_option" };
-  }
+export async function submitQuoteVote(playerId: string, questionId: string, optionIndex: number): Promise<QuoteVoteResult> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
+  if (state.guestStep !== "game_quotes") return { ok: false, error: "not_active" };
+  if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
+  if (!quoteQuestionIds().has(questionId)) return { ok: false, error: "bad_question" };
+  if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
+  
   const activeId = activeTeamMcqQuestionId(state);
-  if (questionId !== activeId) {
-    return { ok: false, error: "wrong_question" };
-  }
+  if (questionId !== activeId) return { ok: false, error: "wrong_question" };
+
   const prev = state.quoteVotesByPlayer[playerId] ?? {};
   state.quoteVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
+  state.revision += 1;
+  await commitState(state);
+  notifySessionChanged();
   return { ok: true };
 }
 
-export function registerPlayer(nickname: string): string {
+export async function registerPlayer(nickname: string): Promise<string> {
   const id = generateId();
-  const state = getState();
+  const state = await getStoreState();
   state.players.push({ id, nickname });
+  await commitState(state);
   notifySessionChanged();
   return id;
 }
 
-export function getSessionState(): SessionState {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
+export async function getSessionState(): Promise<SessionState> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
   return { ...state, players: [...state.players], teams: [...state.teams] };
 }
 
@@ -724,165 +600,104 @@ function currentGameForPublic(state: SessionState): (typeof GAMES)[number] | nul
 function shouldShowMyTeam(state: SessionState, game: (typeof GAMES)[number] | null): boolean {
   if (!game || game.type !== "team") return false;
   const step = state.guestStep;
-  return (
-    step === "lobby_trivia" ||
-    step === "lobby_quotes" ||
-    step === "game_trivia" ||
-    step === "leaderboard_post_trivia" ||
-    step === "game_quotes"
-  );
+  return (step === "lobby_trivia" || step === "lobby_quotes" || step === "game_trivia" || step === "leaderboard_post_trivia" || step === "game_quotes");
 }
 
-export function getPublicState(playerId: string | null): PublicState {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
+export async function getPublicState(playerId: string | null): Promise<PublicState> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
   const game = currentGameForPublic(state);
   let myTeam: Team | null = null;
   let myTeammateNicknames: string[] = [];
-  if (
-    playerId &&
-    state.teams.length > 0 &&
-    game &&
-    shouldShowMyTeam(state, game)
-  ) {
+  if (playerId && state.teams.length > 0 && game && shouldShowMyTeam(state, game)) {
     myTeam = state.teams.find((t) => t.playerIds.includes(playerId)) ?? null;
     if (myTeam) {
-      myTeammateNicknames = myTeam.playerIds
-        .filter((id) => id !== playerId)
-        .map((id) => state.players.find((p) => p.id === id)?.nickname ?? "?");
+      myTeammateNicknames = myTeam.playerIds.filter((id) => id !== playerId).map((id) => state.players.find((p) => p.id === id)?.nickname ?? "?");
     }
   }
 
   const slot = gameSlotFromGuestStep(state.guestStep);
-  const leaderboard =
-    state.guestStep === "leaderboard_post_trivia" ||
-    state.guestStep === "leaderboard_post_bingo"
-      ? getLeaderboardForGameSlot(slot ?? 0)
-      : [];
-
-  const finalLeaderboard =
-    state.guestStep === "leaderboard_final" ? getFinalLeaderboard() : [];
-
+  const leaderboard = (state.guestStep === "leaderboard_post_trivia" || state.guestStep === "leaderboard_post_bingo") ? getLeaderboardForGameSlot(state, slot ?? 0) : [];
+  const finalLeaderboard = state.guestStep === "leaderboard_final" ? getFinalLeaderboard(state) : [];
   const currentGameIndex = publicGameIndexFromGuestStep(state.guestStep);
-
-  const lobbyTeams =
-    state.guestStep === "lobby_trivia" || state.guestStep === "lobby_quotes"
-      ? lobbyTeamsFromSession(state)
-      : [];
-
-  const myBingoClaimedLineKeys =
-    state.guestStep === "game_bingo" && playerId
-      ? [...(state.bingoClaimedLineKeysByPlayer[playerId] ?? [])]
-      : [];
-
-  const myBingoScore =
-    state.guestStep === "game_bingo" && playerId
-      ? state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0
-      : 0;
-
-  const bingoRoundEndsAtEpochMs =
-    state.guestStep === "game_bingo"
-      ? state.bingoRoundEndsAtEpochMs
-      : null;
-
-  const myBingoMarkedCells =
-    state.guestStep === "game_bingo" && playerId
-      ? normalizedBingoMarks(state.bingoMarkedByPlayer[playerId])
-      : [];
-
-  const myTriviaVotes =
-    state.guestStep === "game_trivia" && playerId
-      ? { ...(state.triviaVotesByPlayer[playerId] ?? {}) }
-      : {};
-
-  const myQuoteVotes =
-    state.guestStep === "game_quotes" && playerId
-      ? { ...(state.quoteVotesByPlayer[playerId] ?? {}) }
-      : {};
-
-  const playerKnownToSession =
-    playerId == null || state.players.some((p) => p.id === playerId);
-
-  const teamMcqSync =
-    (state.guestStep === "game_trivia" || state.guestStep === "game_quotes") &&
-    state.teamMcqRoundStartedAtEpochMs != null
-      ? {
-          questionIndex: state.teamMcqRoundIndex,
-          roundStartedAtEpochMs: state.teamMcqRoundStartedAtEpochMs,
-          totalQuestions:
-            state.guestStep === "game_trivia"
-              ? TRIVIA_QUESTIONS.length
-              : getQuoteQuestions().length,
-          answerMs: TEAM_MCQ_ANSWER_MS,
-          revealMs: TEAM_MCQ_REVEAL_MS,
-        }
-      : null;
+  const lobbyTeams = (state.guestStep === "lobby_trivia" || state.guestStep === "lobby_quotes") ? lobbyTeamsFromSession(state) : [];
+  const myBingoClaimedLineKeys = (state.guestStep === "game_bingo" && playerId) ? [...(state.bingoClaimedLineKeysByPlayer[playerId] ?? [])] : [];
+  const myBingoScore = (state.guestStep === "game_bingo" && playerId) ? state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0 : 0;
+  const bingoRoundEndsAtEpochMs = state.guestStep === "game_bingo" ? state.bingoRoundEndsAtEpochMs : null;
+  const myBingoMarkedCells = (state.guestStep === "game_bingo" && playerId) ? normalizedBingoMarks(state.bingoMarkedByPlayer[playerId]) : [];
+  const myTriviaVotes = (state.guestStep === "game_trivia" && playerId) ? { ...(state.triviaVotesByPlayer[playerId] ?? {}) } : {};
+  const myQuoteVotes = (state.guestStep === "game_quotes" && playerId) ? { ...(state.quoteVotesByPlayer[playerId] ?? {}) } : {};
+  const playerKnownToSession = playerId == null || state.players.some((p) => p.id === playerId);
 
   return {
     guestStep: state.guestStep,
     revision: state.revision,
-    syncRevision: state.revision,
-    currentGameIndex,
-    countdownRemaining: state.countdownRemaining,
     scheduledGameStartsAtEpochMs: state.scheduledGameStartsAtEpochMs,
-    playerKnownToSession,
-    currentGame: game,
-    myTeam: myTeam ?? null,
-    myTeammateNicknames,
-    lobbyTeams,
+    countdownRemaining: state.countdownRemaining,
     playerCount: state.players.length,
+    currentGame: game,
+    currentGameIndex,
+    myTeam,
+    myTeammateNicknames,
     leaderboard,
     finalLeaderboard,
-    games: state.games,
+    lobbyTeams,
     myBingoClaimedLineKeys,
     myBingoScore,
     bingoRoundEndsAtEpochMs,
     myBingoMarkedCells,
     myTriviaVotes,
     myQuoteVotes,
-    teamMcqSync,
+    teamMcqSync:
+      state.guestStep === "game_trivia" || state.guestStep === "game_quotes"
+        ? {
+            questionIndex: state.teamMcqRoundIndex,
+            roundStartedAtEpochMs: state.teamMcqRoundStartedAtEpochMs!,
+            totalQuestions:
+              state.guestStep === "game_trivia"
+                ? TRIVIA_QUESTIONS.length
+                : getQuoteQuestions().length,
+            answerMs: TEAM_MCQ_ANSWER_MS,
+            revealMs: TEAM_MCQ_REVEAL_MS,
+          }
+        : null,
+    playerKnownToSession,
+    games: state.games,
+    syncRevision: state.revision,
   };
 }
 
-export function advancePhase(): void {
-  applyDueScheduledTransitions();
-  applyDueTeamMcqRoundAdvance();
-  applyDueBingoRoundEnd();
-  const state = getState();
+export async function advancePhase(): Promise<void> {
+  await applyDueScheduledTransitions();
+  await applyDueTeamMcqRoundAdvance();
+  await applyDueBingoRoundEnd();
+  const state = await getStoreState();
   const from = state.guestStep;
 
-  if (
-    LOBBY_STEPS_WITH_SCHEDULE.includes(from) &&
-    state.scheduledGameStartsAtEpochMs != null
-  ) {
-    return;
-  }
+  if (LOBBY_STEPS_WITH_SCHEDULE.includes(from) && state.scheduledGameStartsAtEpochMs != null) return;
 
-  if (
-    LOBBY_STEPS_WITH_SCHEDULE.includes(from) &&
-    state.scheduledGameStartsAtEpochMs == null
-  ) {
+  if (LOBBY_STEPS_WITH_SCHEDULE.includes(from) && state.scheduledGameStartsAtEpochMs == null) {
     state.scheduledGameStartsAtEpochMs = Date.now() + LOBBY_PRE_GAME_LEAD_MS;
     state.revision += 1;
+    await commitState(state);
     notifySessionChanged();
     return;
   }
 
   const to = getNextGuestStep(from);
-  if (!to) {
-    return;
-  }
-  applyTransitionSideEffects(from, to);
+  if (!to) return;
+  await applyTransitionSideEffects(state, from, to);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.revision += 1;
+  await commitState(state);
   notifySessionChanged();
 }
 
-export function resetSession(): void {
-  globalForStore.__nicola_store = {
+export async function resetSession(): Promise<void> {
+  const nextState = {
     ...INITIAL_STATE,
     games: GAMES,
     players: [],
@@ -896,5 +711,14 @@ export function resetSession(): void {
     teamMcqRoundIndex: 0,
     teamMcqRoundStartedAtEpochMs: null,
   };
+  await commitState(nextState as SessionState);
   notifySessionChanged();
+}
+
+/** FOR TESTING ONLY: Manually sets the bingo playback order and current index. */
+export async function setBingoPlaybackForTests(order: string[], index: number): Promise<void> {
+  const state = await getStoreState();
+  state.bingoSongOrder = order;
+  state.bingoCurrentSongIndex = index;
+  await commitState(state);
 }

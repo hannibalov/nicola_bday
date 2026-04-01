@@ -5,8 +5,11 @@ import { GET } from "./route";
 import { resetSession, registerPlayer } from "@/lib/store";
 import { NICOLA_PLAYER_ID_HEADER } from "@/lib/requestPlayer";
 
-beforeEach(() => {
-  resetSession();
+// Mock Supabase
+jest.mock("@/lib/supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 function stateReq(init?: RequestInit): Request {
@@ -25,7 +28,7 @@ describe("GET /api/state", () => {
   });
 
   it("returns public state with playerId from cookie", async () => {
-    const id = registerPlayer("Bob");
+    const id = await registerPlayer("Bob");
     const res = await GET(
       stateReq({
         headers: { Cookie: `playerId=${encodeURIComponent(id)}` },
@@ -38,13 +41,13 @@ describe("GET /api/state", () => {
   });
 
   it("under NODE_ENV=test prefers x-nicola-player-id over cookie", async () => {
-    const fromCookie = registerPlayer("Z_cookie");
-    const fromHeader = registerPlayer("Z_header");
+    const id1 = await registerPlayer("Z_cookie");
+    const id2 = await registerPlayer("Z_header");
     const res = await GET(
       stateReq({
         headers: {
-          Cookie: `playerId=${encodeURIComponent(fromCookie)}`,
-          [NICOLA_PLAYER_ID_HEADER]: fromHeader,
+          Cookie: `playerId=${encodeURIComponent(id1)}`,
+          [NICOLA_PLAYER_ID_HEADER]: id2,
         },
       }),
     );
@@ -54,7 +57,7 @@ describe("GET /api/state", () => {
   });
 
   it("playerKnownToSession false when cookie survives host reset", async () => {
-    const id = registerPlayer("Zed");
+    const id = await registerPlayer("Zed");
     let res = await GET(
       stateReq({
         headers: { Cookie: `playerId=${encodeURIComponent(id)}` },
@@ -63,7 +66,7 @@ describe("GET /api/state", () => {
     let data = await res.json();
     expect(data.playerKnownToSession).toBe(true);
 
-    resetSession();
+    await resetSession();
     res = await GET(
       stateReq({
         headers: { Cookie: `playerId=${encodeURIComponent(id)}` },

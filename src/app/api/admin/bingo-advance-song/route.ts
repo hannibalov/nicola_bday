@@ -11,7 +11,7 @@ export async function POST() {
   if (key !== ADMIN_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const result = adminAdvanceBingoSong();
+  const result = await adminAdvanceBingoSong();
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

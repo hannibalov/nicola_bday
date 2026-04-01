@@ -22,29 +22,32 @@ import { getQuoteQuestions } from "./quoteContent";
 import { GAMES } from "./gameConfig";
 import { GUEST_STEP_SEQUENCE, type GuestStep } from "@/types";
 
-beforeEach(() => {
-  resetSession();
+// Mock Supabase to keep tests local and fast.
+jest.mock("./supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 /** Aligns playback with the player’s top row so server marks + claims stay valid. */
-function markTopRowForPlayer(playerId: string) {
+async function markTopRowForPlayer(playerId: string) {
   const titles = bingoCardTitlesForPlayer(playerId);
   const pad = "__pad__";
   const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
   setBingoPlaybackForTests(order, 0);
-  expect(markBingoCell(playerId, 0, true).ok).toBe(true);
+  expect((await markBingoCell(playerId, 0, true)).ok).toBe(true);
   setBingoPlaybackForTests(order, 1);
-  expect(markBingoCell(playerId, 1, true).ok).toBe(true);
+  expect((await markBingoCell(playerId, 1, true)).ok).toBe(true);
   setBingoPlaybackForTests(order, 2);
-  expect(markBingoCell(playerId, 2, true).ok).toBe(true);
+  expect((await markBingoCell(playerId, 2, true)).ok).toBe(true);
 }
 
-function markFullCardForPlayer(playerId: string) {
+async function markFullCardForPlayer(playerId: string) {
   const titles = bingoCardTitlesForPlayer(playerId);
   const order = [...titles, "__pad__"];
   for (let i = 0; i < BINGO_CELL_COUNT; i++) {
     setBingoPlaybackForTests(order, i);
-    expect(markBingoCell(playerId, i, true).ok).toBe(true);
+    expect((await markBingoCell(playerId, i, true)).ok).toBe(true);
   }
 }
 
@@ -52,39 +55,40 @@ function markFullCardForPlayer(playerId: string) {
  * One host “chapter” in tests: advance phase, and if the host just scheduled a lobby countdown
  * (same step + timestamp), jump to the game immediately.
  */
-function stepForwardInTests(): void {
-  const beforeStep = getSessionState().guestStep;
-  advancePhase();
-  const after = getSessionState();
+async function stepForwardInTests(): Promise<void> {
+  const beforeStep = (await getSessionState()).guestStep;
+  await advancePhase();
+  const after = await getSessionState();
   if (
     after.guestStep === beforeStep &&
     after.scheduledGameStartsAtEpochMs != null
   ) {
-    applyDueScheduledTransitions(after.scheduledGameStartsAtEpochMs + 1);
+    await applyDueScheduledTransitions(after.scheduledGameStartsAtEpochMs + 1);
   }
 }
 
 describe("store", () => {
   describe("registerPlayer", () => {
-    it("adds a player with unique id and nickname", () => {
-      const id = registerPlayer("Alice");
+    it("adds a player with unique id and nickname", async () => {
+      const id = await registerPlayer("Alice");
       expect(id).toBeDefined();
       expect(typeof id).toBe("string");
-      expect(getSessionState().players).toHaveLength(1);
-      expect(getSessionState().players[0]).toEqual({ id, nickname: "Alice" });
+      const state = await getSessionState();
+      expect(state.players).toHaveLength(1);
+      expect(state.players[0]).toEqual({ id, nickname: "Alice" });
     });
 
-    it("allows multiple players with different nicknames", () => {
-      const id1 = registerPlayer("Alice");
-      const id2 = registerPlayer("Bob");
+    it("allows multiple players with different nicknames", async () => {
+      const id1 = await registerPlayer("Alice");
+      const id2 = await registerPlayer("Bob");
       expect(id1).not.toBe(id2);
-      expect(getSessionState().players).toHaveLength(2);
+      expect((await getSessionState()).players).toHaveLength(2);
     });
   });
 
   describe("getSessionState", () => {
-    it("returns initial party_protocol and empty players", () => {
-      const state = getSessionState();
+    it("returns initial party_protocol and empty players", async () => {
+      const state = await getSessionState();
       expect(state.guestStep).toBe("party_protocol");
       expect(state.revision).toBe(0);
       expect(state.scheduledGameStartsAtEpochMs).toBeNull();
@@ -95,80 +99,82 @@ describe("store", () => {
   });
 
   describe("advancePhase", () => {
-    it("first advance moves to lobby_trivia and bumps revision", () => {
-      registerPlayer("Alice");
-      advancePhase();
-      const state = getSessionState();
+    it("first advance moves to lobby_trivia and bumps revision", async () => {
+      await registerPlayer("Alice");
+      await advancePhase();
+      const state = await getSessionState();
       expect(state.guestStep).toBe("lobby_trivia");
       expect(state.revision).toBe(1);
     });
 
-    it("second advance from lobby schedules game start without changing step", () => {
-      registerPlayer("Alice");
-      advancePhase();
-      advancePhase();
-      const state = getSessionState();
+    it("second advance from lobby schedules game start without changing step", async () => {
+      await registerPlayer("Alice");
+      await advancePhase();
+      await advancePhase();
+      const state = await getSessionState();
       expect(state.guestStep).toBe("lobby_trivia");
       expect(state.scheduledGameStartsAtEpochMs).not.toBeNull();
     });
 
-    it("applyDueScheduledTransitions moves lobby into game_trivia and clears schedule", () => {
-      registerPlayer("Alice");
-      advancePhase();
-      advancePhase();
-      const startAt = getSessionState().scheduledGameStartsAtEpochMs!;
+    it("applyDueScheduledTransitions moves lobby into game_trivia and clears schedule", async () => {
+      await registerPlayer("Alice");
+      await advancePhase();
+      await advancePhase();
+      const startAt = (await getSessionState()).scheduledGameStartsAtEpochMs!;
       expect(startAt).toBeGreaterThan(Date.now());
-      applyDueScheduledTransitions(startAt + 1);
-      expect(getSessionState().guestStep).toBe("game_trivia");
-      expect(getSessionState().scheduledGameStartsAtEpochMs).toBeNull();
-      expect(getSessionState().countdownRemaining).toBeNull();
+      await applyDueScheduledTransitions(startAt + 1);
+      const after = await getSessionState();
+      expect(after.guestStep).toBe("game_trivia");
+      expect(after.scheduledGameStartsAtEpochMs).toBeNull();
+      expect(after.countdownRemaining).toBeNull();
     });
 
-    it("from game_trivia moves to leaderboard and records scores", () => {
-      registerPlayer("Alice");
-      registerPlayer("Bob");
-      stepForwardInTests();
-      stepForwardInTests();
-      advancePhase();
-      const state = getSessionState();
+    it("from game_trivia moves to leaderboard and records scores", async () => {
+      await registerPlayer("Alice");
+      await registerPlayer("Bob");
+      await stepForwardInTests();
+      await stepForwardInTests();
+      await advancePhase();
+      const state = await getSessionState();
       expect(state.guestStep).toBe("leaderboard_post_trivia");
       expect(state.gameScores[GAMES[0].id]).toBeDefined();
     });
 
-    it("trivia leaderboard uses majority team scoring (+50 per correct question per player)", () => {
+    it("trivia leaderboard uses majority team scoring (+50 per correct question per player)", async () => {
       const ids: string[] = [];
-      for (let i = 0; i < 4; i++) ids.push(registerPlayer(`P${i}`));
-      while (getSessionState().guestStep !== "game_trivia") {
-        stepForwardInTests();
+      for (let i = 0; i < 4; i++) ids.push(await registerPlayer(`P${i}`));
+      while ((await getSessionState()).guestStep !== "game_trivia") {
+        await stepForwardInTests();
       }
-      const teams = getSessionState().teams;
+      const teams = (await getSessionState()).teams;
       const teamA = teams[0]!;
-      let t = getSessionState().teamMcqRoundStartedAtEpochMs!;
+      let t = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
       for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
         const q = TRIVIA_QUESTIONS[qi]!;
         for (const pid of teamA.playerIds) {
-          expect(submitTriviaVote(pid, q.id, q.correctIndex).ok).toBe(true);
+          expect((await submitTriviaVote(pid, q.id, q.correctIndex)).ok).toBe(true);
         }
         if (qi < TRIVIA_QUESTIONS.length - 1) {
           t += TEAM_MCQ_CYCLE_MS + 1;
-          applyDueTeamMcqRoundAdvance(t);
+          await applyDueTeamMcqRoundAdvance(t);
         }
       }
-      advancePhase();
-      const board = getSessionState().gameScores[GAMES[0].id]!;
+      await advancePhase();
+      const board = (await getSessionState()).gameScores[GAMES[0].id]!;
       const expected = TRIVIA_QUESTIONS.length * 50;
       teamA.playerIds.forEach((pid) => {
         expect(board[pid]).toBe(expected);
       });
     });
 
-    it("gives all teammates the same round score for team games", () => {
-      for (let i = 0; i < 6; i++) registerPlayer(`P${i}`);
-      while (getSessionState().guestStep !== "leaderboard_post_trivia") {
-        stepForwardInTests();
+    it("gives all teammates the same round score for team games", async () => {
+      for (let i = 0; i < 6; i++) await registerPlayer(`P${i}`);
+      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
+        await stepForwardInTests();
       }
-      const board = getSessionState().gameScores[GAMES[0].id]!;
-      const teams = getSessionState().teams;
+      const state = await getSessionState();
+      const board = state.gameScores[GAMES[0].id]!;
+      const teams = state.teams;
       teams.forEach((t) => {
         const pts = t.playerIds.map((id) => board[id]);
         const first = pts[0];
@@ -177,179 +183,181 @@ describe("store", () => {
       });
     });
 
-    it("runs full sequence to leaderboard_final", () => {
-      registerPlayer("Alice");
+    it("runs full sequence to leaderboard_final", async () => {
+      await registerPlayer("Alice");
       for (let i = 0; i < GUEST_STEP_SEQUENCE.length - 1; i++) {
-        stepForwardInTests();
+        await stepForwardInTests();
       }
-      expect(getSessionState().guestStep).toBe("leaderboard_final");
+      expect((await getSessionState()).guestStep).toBe("leaderboard_final");
     });
 
-    it("does not advance past leaderboard_final", () => {
-      registerPlayer("Alice");
+    it("does not advance past leaderboard_final", async () => {
+      await registerPlayer("Alice");
       for (let i = 0; i < GUEST_STEP_SEQUENCE.length - 1; i++) {
-        stepForwardInTests();
+        await stepForwardInTests();
       }
-      const rev = getSessionState().revision;
-      advancePhase();
-      expect(getSessionState().guestStep).toBe("leaderboard_final");
-      expect(getSessionState().revision).toBe(rev);
+      const rev = (await getSessionState()).revision;
+      await advancePhase();
+      const after = await getSessionState();
+      expect(after.guestStep).toBe("leaderboard_final");
+      expect(after.revision).toBe(rev);
     });
   });
 
   describe("teams", () => {
-    it("rebuilds teams when entering lobby_trivia (14 players → 4 teams)", () => {
-      for (let i = 0; i < 14; i++) registerPlayer(`Player${i}`);
-      advancePhase();
-      const state = getSessionState();
+    it("rebuilds teams when entering lobby_trivia (14 players → 4 teams)", async () => {
+      for (let i = 0; i < 14; i++) await registerPlayer(`Player${i}`);
+      await advancePhase();
+      const state = await getSessionState();
       expect(state.guestStep).toBe("lobby_trivia");
       expect(state.teams).toHaveLength(4);
       const sizes = state.teams.map((t) => t.playerIds.length).sort((a, b) => b - a);
       expect(sizes).toEqual([4, 4, 3, 3]);
     });
 
-    it("reshuffles teams for quotes after trivia", () => {
-      for (let i = 0; i < 14; i++) registerPlayer(`P${i}`);
-      while (getSessionState().guestStep !== "leaderboard_post_trivia") {
-        stepForwardInTests();
+    it("reshuffles teams for quotes after trivia", async () => {
+      for (let i = 0; i < 14; i++) await registerPlayer(`P${i}`);
+      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
+        await stepForwardInTests();
       }
       const triviaTeams = JSON.stringify(
-        getSessionState().teams.map((t) => [...t.playerIds].sort())
+        (await getSessionState()).teams.map((t) => [...t.playerIds].sort())
       );
-      while (getSessionState().guestStep !== "lobby_quotes") {
-        stepForwardInTests();
+      while ((await getSessionState()).guestStep !== "lobby_quotes") {
+        await stepForwardInTests();
       }
       const quoteTeams = JSON.stringify(
-        getSessionState().teams.map((t) => [...t.playerIds].sort())
+        (await getSessionState()).teams.map((t) => [...t.playerIds].sort())
       );
       expect(quoteTeams).not.toBe(triviaTeams);
     });
   });
 
   describe("getPublicState", () => {
-    it("returns scheduled start time after host starts lobby countdown", () => {
-      const id = registerPlayer("Alice");
-      advancePhase();
-      advancePhase();
-      const publicState = getPublicState(id);
+    it("returns scheduled start time after host starts lobby countdown", async () => {
+      const id = await registerPlayer("Alice");
+      await advancePhase();
+      await advancePhase();
+      const publicState = await getPublicState(id);
       expect(publicState.guestStep).toBe("lobby_trivia");
       expect(publicState.currentGame).toEqual(GAMES[0]);
       expect(publicState.scheduledGameStartsAtEpochMs).not.toBeNull();
     });
 
-    it("returns myTeam during trivia lobby countdown", () => {
+    it("returns myTeam during trivia lobby countdown", async () => {
       const ids: string[] = [];
-      for (let i = 0; i < 12; i++) ids.push(registerPlayer(`P${i}`));
-      advancePhase();
-      advancePhase();
-      const publicState = getPublicState(ids[0]);
+      for (let i = 0; i < 12; i++) ids.push(await registerPlayer(`P${i}`));
+      await advancePhase();
+      await advancePhase();
+      const publicState = await getPublicState(ids[0]);
       expect(publicState.myTeam).toBeDefined();
       expect(publicState.myTeammateNicknames.length).toBeGreaterThanOrEqual(2);
     });
 
-    it("hides myTeam during bingo lobby countdown", () => {
-      const id = registerPlayer("Alice");
-      while (getSessionState().guestStep !== "lobby_bingo") {
-        stepForwardInTests();
+    it("hides myTeam during bingo lobby countdown", async () => {
+      const id = await registerPlayer("Alice");
+      while ((await getSessionState()).guestStep !== "lobby_bingo") {
+        await stepForwardInTests();
       }
-      advancePhase();
-      expect(getPublicState(id).myTeam).toBeNull();
+      await advancePhase();
+      expect((await getPublicState(id)).myTeam).toBeNull();
     });
 
-    it("returns myTeam on post-trivia leaderboard for highlight UX", () => {
+    it("returns myTeam on post-trivia leaderboard for highlight UX", async () => {
       const ids: string[] = [];
-      for (let i = 0; i < 8; i++) ids.push(registerPlayer(`P${i}`));
-      while (getSessionState().guestStep !== "leaderboard_post_trivia") {
-        stepForwardInTests();
+      for (let i = 0; i < 8; i++) ids.push(await registerPlayer(`P${i}`));
+      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
+        await stepForwardInTests();
       }
-      const pub = getPublicState(ids[0]);
+      const pub = await getPublicState(ids[0]);
       expect(pub.myTeam).toBeDefined();
       expect(pub.myTeam?.playerIds).toContain(ids[0]);
     });
 
-    it("exposes lobbyTeams with nicknames on lobby_trivia", () => {
+    it("exposes lobbyTeams with nicknames on lobby_trivia", async () => {
       const ids: string[] = [];
-      for (let i = 0; i < 8; i++) ids.push(registerPlayer(`P${i}`));
-      advancePhase();
-      const pub = getPublicState(ids[0]);
+      for (let i = 0; i < 8; i++) ids.push(await registerPlayer(`P${i}`));
+      await advancePhase();
+      const pub = await getPublicState(ids[0]);
       expect(pub.guestStep).toBe("lobby_trivia");
       expect(pub.lobbyTeams.length).toBeGreaterThanOrEqual(1);
       expect(pub.lobbyTeams.flatMap((t) => t.nicknames)).toContain("P0");
       expect(pub.playerCount).toBe(8);
     });
 
-    it("clears lobbyTeams outside trivia lobby", () => {
-      expect(getPublicState(null).lobbyTeams).toEqual([]);
-      expect(getPublicState(null).playerCount).toBe(0);
+    it("clears lobbyTeams outside trivia lobby", async () => {
+      expect((await getPublicState(null)).lobbyTeams).toEqual([]);
+      expect((await getPublicState(null)).playerCount).toBe(0);
     });
 
-    it("playerKnownToSession is true when there is no cookie", () => {
-      expect(getPublicState(null).playerKnownToSession).toBe(true);
+    it("playerKnownToSession is true when there is no cookie", async () => {
+      expect((await getPublicState(null)).playerKnownToSession).toBe(true);
     });
 
-    it("playerKnownToSession is true when id matches a registered player", () => {
-      const id = registerPlayer("Pat");
-      expect(getPublicState(id).playerKnownToSession).toBe(true);
+    it("playerKnownToSession is true when id matches a registered player", async () => {
+      const id = await registerPlayer("Pat");
+      expect((await getPublicState(id)).playerKnownToSession).toBe(true);
     });
 
-    it("playerKnownToSession is false when cookie id is not in session (e.g. after reset)", () => {
-      const id = registerPlayer("Gone");
-      resetSession();
-      expect(getPublicState(id).playerKnownToSession).toBe(false);
+    it("playerKnownToSession is false when cookie id is not in session (e.g. after reset)", async () => {
+      const id = await registerPlayer("Gone");
+      await resetSession();
+      expect((await getPublicState(id)).playerKnownToSession).toBe(false);
     });
 
-    it("returns empty myTriviaVotes outside game_trivia", () => {
-      const id = registerPlayer("Z");
-      expect(getPublicState(id).myTriviaVotes).toEqual({});
+    it("returns empty myTriviaVotes outside game_trivia", async () => {
+      const id = await registerPlayer("Z");
+      expect((await getPublicState(id)).myTriviaVotes).toEqual({});
     });
 
-    it("returns myTriviaVotes during game_trivia", () => {
-      const id = registerPlayer("Solo");
-      while (getSessionState().guestStep !== "game_trivia") {
-        stepForwardInTests();
+    it("returns myTriviaVotes during game_trivia", async () => {
+      const id = await registerPlayer("Solo");
+      while ((await getSessionState()).guestStep !== "game_trivia") {
+        await stepForwardInTests();
       }
-      submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 2);
-      const pub = getPublicState(id);
+      await submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 2);
+      const pub = await getPublicState(id);
       expect(pub.myTriviaVotes[TRIVIA_QUESTIONS[0].id]).toBe(2);
       expect(pub.teamMcqSync).not.toBeNull();
       expect(pub.teamMcqSync?.questionIndex).toBe(0);
     });
 
-    it("returns empty myQuoteVotes outside game_quotes", () => {
-      const id = registerPlayer("Q");
-      expect(getPublicState(id).myQuoteVotes).toEqual({});
+    it("returns empty myQuoteVotes outside game_quotes", async () => {
+      const id = await registerPlayer("Q");
+      expect((await getPublicState(id)).myQuoteVotes).toEqual({});
     });
 
-    it("returns myQuoteVotes during game_quotes", () => {
-      const id = registerPlayer("QuotePlayer");
-      while (getSessionState().guestStep !== "game_quotes") {
-        stepForwardInTests();
+    it("returns myQuoteVotes during game_quotes", async () => {
+      const id = await registerPlayer("QuotePlayer");
+      while ((await getSessionState()).guestStep !== "game_quotes") {
+        await stepForwardInTests();
       }
       const q0 = getQuoteQuestions()[0];
-      submitQuoteVote(id, q0.id, 2);
-      const pub = getPublicState(id);
+      await submitQuoteVote(id, q0.id, 2);
+      const pub = await getPublicState(id);
       expect(pub.myQuoteVotes[q0.id]).toBe(2);
       expect(pub.teamMcqSync?.questionIndex).toBe(0);
     });
 
-    it("returns empty myBingoClaimedLineKeys outside game_bingo", () => {
-      const id = registerPlayer("A");
-      expect(getPublicState(id).myBingoClaimedLineKeys).toEqual([]);
-      expect(getPublicState(id).myBingoScore).toBe(0);
-      expect(getPublicState(id).bingoRoundEndsAtEpochMs).toBeNull();
-      expect(getPublicState(id).myBingoMarkedCells).toEqual([]);
+    it("returns empty myBingoClaimedLineKeys outside game_bingo", async () => {
+      const id = await registerPlayer("A");
+      const pub = await getPublicState(id);
+      expect(pub.myBingoClaimedLineKeys).toEqual([]);
+      expect(pub.myBingoScore).toBe(0);
+      expect(pub.bingoRoundEndsAtEpochMs).toBeNull();
+      expect(pub.myBingoMarkedCells).toEqual([]);
     });
 
-    it("exposes bingo countdown, marks, myBingoClaimedLineKeys and score during game_bingo", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_bingo") {
-        stepForwardInTests();
+    it("exposes bingo countdown, marks, myBingoClaimedLineKeys and score during game_bingo", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_bingo") {
+        await stepForwardInTests();
       }
-      const pub0 = getPublicState(id);
+      const pub0 = await getPublicState(id);
       expect(pub0.bingoRoundEndsAtEpochMs).toBeGreaterThan(Date.now());
-      markTopRowForPlayer(id);
-      claimBingo(id, ["0,1,2"]);
-      const pub = getPublicState(id);
+      await markTopRowForPlayer(id);
+      await claimBingo(id, ["0,1,2"]);
+      const pub = await getPublicState(id);
       expect(pub.myBingoClaimedLineKeys).toContain("0,1,2");
       expect(pub.myBingoScore).toBe(100);
       expect(pub.myBingoMarkedCells.slice(0, 3)).toEqual([true, true, true]);
@@ -357,159 +365,161 @@ describe("store", () => {
   });
 
   describe("claimBingo", () => {
-    function advanceUntil(step: GuestStep) {
+    async function advanceUntil(step: GuestStep) {
       let guard = 0;
-      while (getSessionState().guestStep !== step && guard < 30) {
-        stepForwardInTests();
+      while ((await getSessionState()).guestStep !== step && guard < 30) {
+        await stepForwardInTests();
         guard++;
       }
-      expect(getSessionState().guestStep).toBe(step);
+      expect((await getSessionState()).guestStep).toBe(step);
     }
 
-    it("returns null when not in game_bingo", () => {
-      const id = registerPlayer("A");
-      expect(claimBingo(id, ["0,1,2"])).toBeNull();
+    it("returns null when not in game_bingo", async () => {
+      const id = await registerPlayer("A");
+      expect(await claimBingo(id, ["0,1,2"])).toBeNull();
     });
 
-    it("awards 100 for a new row and 50 for a new column", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      markTopRowForPlayer(id);
-      const topRow = claimBingo(id, ["0,1,2"]);
+    it("awards 100 for a new row and 50 for a new column", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      await markTopRowForPlayer(id);
+      const topRow = await claimBingo(id, ["0,1,2"]);
       expect(topRow?.awarded).toBe(100);
       expect(topRow?.totalForPlayer).toBe(100);
       const titles = bingoCardTitlesForPlayer(id);
       const pad = "__pad__";
       setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 0);
-      markBingoCell(id, 0, true);
+      await markBingoCell(id, 0, true);
       setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 1);
-      markBingoCell(id, 3, true);
-      const col = claimBingo(id, ["0,3"]);
+      await markBingoCell(id, 3, true);
+      const col = await claimBingo(id, ["0,3"]);
       expect(col?.awarded).toBe(50);
       expect(col?.totalForPlayer).toBe(150);
-      expect(claimBingo(id, ["0,1,2"])?.awarded).toBe(0);
+      expect((await claimBingo(id, ["0,1,2"]))?.awarded).toBe(0);
     });
 
-    it("stacks points for multiple new lines in one claim", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      markFullCardForPlayer(id);
-      const r = claimBingo(id, ["0,1,2", "3,4,5"]);
+    it("stacks points for multiple new lines in one claim", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      await markFullCardForPlayer(id);
+      const r = await claimBingo(id, ["0,1,2", "3,4,5"]);
       expect(r?.awarded).toBe(200);
       expect(r?.totalForPlayer).toBe(200);
     });
 
-    it("awards 500 once for the full-card key when every cell is marked", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      markFullCardForPlayer(id);
-      const r = claimBingo(id, ["full"]);
+    it("awards 500 once for the full-card key when every cell is marked", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      await markFullCardForPlayer(id);
+      const r = await claimBingo(id, ["full"]);
       expect(r?.awarded).toBe(500);
       expect(r?.totalForPlayer).toBe(500);
       expect(r?.claimedLineKeys).toContain("full");
-      expect(claimBingo(id, ["full"])?.awarded).toBe(0);
+      expect((await claimBingo(id, ["full"]))?.awarded).toBe(0);
     });
 
-    it("combines lines and full-card points in one claim", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      markFullCardForPlayer(id);
-      const r = claimBingo(id, ["0,1,2", "3,4,5", "0,3", "1,4", "2,5", "full"]);
+    it("combines lines and full-card points in one claim", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      await markFullCardForPlayer(id);
+      const r = await claimBingo(id, ["0,1,2", "3,4,5", "0,3", "1,4", "2,5", "full"]);
       expect(r?.awarded).toBe(850);
       expect(r?.totalForPlayer).toBe(850);
     });
 
-    it("ignores invalid line keys", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      expect(claimBingo(id, ["0,4"])?.awarded).toBe(0);
+    it("ignores invalid line keys", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      expect((await claimBingo(id, ["0,4"]))?.awarded).toBe(0);
     });
 
-    it("keeps live bingo scores on post-bingo leaderboard snapshot", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      markTopRowForPlayer(id);
-      claimBingo(id, ["0,1,2"]);
-      advancePhase();
-      expect(getSessionState().guestStep).toBe("leaderboard_post_bingo");
-      const board = getSessionState().gameScores[GAMES[1].id]!;
+    it("keeps live bingo scores on post-bingo leaderboard snapshot", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      await markTopRowForPlayer(id);
+      await claimBingo(id, ["0,1,2"]);
+      await advancePhase();
+      expect((await getSessionState()).guestStep).toBe("leaderboard_post_bingo");
+      const board = (await getSessionState()).gameScores[GAMES[1].id]!;
       expect(board[id]).toBe(100);
     });
 
-    it("does not award lines that are not fully marked on the server", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
-      expect(claimBingo(id, ["0,1,2"])?.awarded).toBe(0);
+    it("does not award lines that are not fully marked on the server", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      expect((await claimBingo(id, ["0,1,2"]))?.awarded).toBe(0);
     });
   });
 
   describe("markBingoCell", () => {
-    function advanceUntil(step: GuestStep) {
+    async function advanceUntil(step: GuestStep) {
       let guard = 0;
-      while (getSessionState().guestStep !== step && guard < 30) {
-        stepForwardInTests();
+      while ((await getSessionState()).guestStep !== step && guard < 30) {
+        await stepForwardInTests();
         guard++;
       }
-      expect(getSessionState().guestStep).toBe(step);
+      expect((await getSessionState()).guestStep).toBe(step);
     }
 
-    it("applies a penalty when marking a tile that is not the current song", () => {
-      const id = registerPlayer("A");
-      advanceUntil("game_bingo");
+    it("applies a penalty when marking a tile that is not the current song", async () => {
+      const id = await registerPlayer("A");
+      await advanceUntil("game_bingo");
       const titles = bingoCardTitlesForPlayer(id);
       setBingoPlaybackForTests([titles[0]!], 0);
-      const r = markBingoCell(id, 4, true);
+      const r = await markBingoCell(id, 4, true);
       expect(r.ok).toBe(true);
       if (!r.ok) throw new Error("expected markBingoCell success");
       expect(r.wrongTapPenalty).toBe(true);
-      expect(getSessionState().gameScores[GAMES[1].id]![id]).toBe(-5);
+      const state = await getSessionState();
+      expect(state.gameScores[GAMES[1].id]![id]).toBe(-5);
       expect(r.marked[4]).toBe(false);
     });
 
-    it("advances the host playhead with adminAdvanceBingoSong", () => {
-      registerPlayer("A");
-      advanceUntil("game_bingo");
-      expect(adminAdvanceBingoSong()).toEqual({ ok: true });
-      expect(getSessionState().bingoCurrentSongIndex).toBe(1);
+    it("advances the host playhead with adminAdvanceBingoSong", async () => {
+      await registerPlayer("A");
+      await advanceUntil("game_bingo");
+      expect(await adminAdvanceBingoSong()).toEqual({ ok: true });
+      expect((await getSessionState()).bingoCurrentSongIndex).toBe(1);
     });
   });
 
   describe("applyDueBingoRoundEnd", () => {
-    it("moves to bingo leaderboard and records scores when the round timer is past", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_bingo") {
-        stepForwardInTests();
+    it("moves to bingo leaderboard and records scores when the round timer is past", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_bingo") {
+        await stepForwardInTests();
       }
-      markTopRowForPlayer(id);
-      claimBingo(id, ["0,1,2"]);
-      const endAt = getSessionState().bingoRoundEndsAtEpochMs!;
+      await markTopRowForPlayer(id);
+      await claimBingo(id, ["0,1,2"]);
+      const endAt = (await getSessionState()).bingoRoundEndsAtEpochMs!;
       jest.useFakeTimers({ now: endAt + 2_000, advanceTimers: true });
-      getSessionState();
-      expect(getSessionState().guestStep).toBe("leaderboard_post_bingo");
-      expect(getSessionState().gameScores[GAMES[1].id]![id]).toBe(100);
+      // Trigger update check
+      await getSessionState();
+      expect((await getSessionState()).guestStep).toBe("leaderboard_post_bingo");
+      expect((await getSessionState()).gameScores[GAMES[1].id]![id]).toBe(100);
       jest.useRealTimers();
     });
   });
 
   describe("rebuildTeams", () => {
-    it("replaces existing teams", () => {
-      registerPlayer("A");
-      registerPlayer("B");
-      rebuildTeams();
-      const first = getSessionState().teams.map((t) => t.playerIds.slice().sort());
-      rebuildTeams();
-      const second = getSessionState().teams.map((t) => t.playerIds.slice().sort());
+    it("replaces existing teams", async () => {
+      await registerPlayer("A");
+      await registerPlayer("B");
+      await rebuildTeams();
+      const first = (await getSessionState()).teams.map((t) => t.playerIds.slice().sort());
+      await rebuildTeams();
+      const second = (await getSessionState()).teams.map((t) => t.playerIds.slice().sort());
       expect(first.length).toBeGreaterThan(0);
       expect(second.length).toBeGreaterThan(0);
     });
   });
 
   describe("resetSession", () => {
-    it("clears players, teams, scores and resets step", () => {
-      registerPlayer("Alice");
-      advancePhase();
-      resetSession();
-      const state = getSessionState();
+    it("clears players, teams, scores and resets step", async () => {
+      await registerPlayer("Alice");
+      await advancePhase();
+      await resetSession();
+      const state = await getSessionState();
       expect(state.guestStep).toBe("party_protocol");
       expect(state.players).toHaveLength(0);
       expect(state.teams).toHaveLength(0);
@@ -525,65 +535,65 @@ describe("store", () => {
   });
 
   describe("quote game scoring", () => {
-    it("awards 50 per correct team majority per quote (same as trivia)", () => {
-      const a = registerPlayer("A");
-      const b = registerPlayer("B");
-      while (getSessionState().guestStep !== "game_quotes") {
-        stepForwardInTests();
+    it("awards 50 per correct team majority per quote (same as trivia)", async () => {
+      const a = await registerPlayer("A");
+      const b = await registerPlayer("B");
+      while ((await getSessionState()).guestStep !== "game_quotes") {
+        await stepForwardInTests();
       }
       const q0 = getQuoteQuestions()[0];
-      submitQuoteVote(a, q0.id, q0.correctIndex);
-      submitQuoteVote(b, q0.id, q0.correctIndex);
-      advancePhase();
-      expect(getSessionState().guestStep).toBe("leaderboard_final");
-      const board = getSessionState().gameScores[GAMES[2].id]!;
+      await submitQuoteVote(a, q0.id, q0.correctIndex);
+      await submitQuoteVote(b, q0.id, q0.correctIndex);
+      await advancePhase();
+      expect((await getSessionState()).guestStep).toBe("leaderboard_final");
+      const board = (await getSessionState()).gameScores[GAMES[2].id]!;
       expect(board[a]).toBe(50);
       expect(board[b]).toBe(50);
     });
 
-    it("does not give points when team majority is wrong", () => {
-      const a = registerPlayer("A");
-      const b = registerPlayer("B");
-      while (getSessionState().guestStep !== "game_quotes") {
-        stepForwardInTests();
+    it("does not give points when team majority is wrong", async () => {
+      const a = await registerPlayer("A");
+      const b = await registerPlayer("B");
+      while ((await getSessionState()).guestStep !== "game_quotes") {
+        await stepForwardInTests();
       }
       const q0 = getQuoteQuestions()[0];
       const wrong = q0.correctIndex === 0 ? 1 : 0;
-      submitQuoteVote(a, q0.id, wrong);
-      submitQuoteVote(b, q0.id, wrong);
-      advancePhase();
-      const board = getSessionState().gameScores[GAMES[2].id]!;
+      await submitQuoteVote(a, q0.id, wrong);
+      await submitQuoteVote(b, q0.id, wrong);
+      await advancePhase();
+      const board = (await getSessionState()).gameScores[GAMES[2].id]!;
       expect(board[a]).toBe(0);
       expect(board[b]).toBe(0);
     });
   });
 
   describe("submitTriviaVote", () => {
-    it("rejects when not in game_trivia", () => {
-      const id = registerPlayer("A");
-      const r = submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 0);
+    it("rejects when not in game_trivia", async () => {
+      const id = await registerPlayer("A");
+      const r = await submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 0);
       expect(r).toEqual({ ok: false, error: "not_active" });
     });
 
-    it("accepts votes during game_trivia", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_trivia") {
-        stepForwardInTests();
+    it("accepts votes during game_trivia", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_trivia") {
+        await stepForwardInTests();
       }
-      expect(getSessionState().triviaVotesByPlayer).toEqual({});
-      expect(submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 1).ok).toBe(true);
-      expect(getSessionState().triviaVotesByPlayer[id]?.[TRIVIA_QUESTIONS[0].id]).toBe(
-        1
-      );
+      const stateBefore = await getSessionState();
+      expect(stateBefore.triviaVotesByPlayer).toEqual({});
+      expect((await submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 1)).ok).toBe(true);
+      const stateAfter = await getSessionState();
+      expect(stateAfter.triviaVotesByPlayer[id]?.[TRIVIA_QUESTIONS[0].id]).toBe(1);
     });
 
-    it("rejects vote for a question that is not the active round", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_trivia") {
-        stepForwardInTests();
+    it("rejects vote for a question that is not the active round", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_trivia") {
+        await stepForwardInTests();
       }
       const wrongId = TRIVIA_QUESTIONS[1]!.id;
-      expect(submitTriviaVote(id, wrongId, 0)).toEqual({
+      expect(await submitTriviaVote(id, wrongId, 0)).toEqual({
         ok: false,
         error: "wrong_question",
       });
@@ -591,31 +601,33 @@ describe("store", () => {
   });
 
   describe("submitQuoteVote", () => {
-    it("rejects when not in game_quotes", () => {
-      const id = registerPlayer("A");
+    it("rejects when not in game_quotes", async () => {
+      const id = await registerPlayer("A");
       const q0 = getQuoteQuestions()[0];
-      const r = submitQuoteVote(id, q0.id, 0);
+      const r = await submitQuoteVote(id, q0.id, 0);
       expect(r).toEqual({ ok: false, error: "not_active" });
     });
 
-    it("accepts votes during game_quotes", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_quotes") {
-        stepForwardInTests();
+    it("accepts votes during game_quotes", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_quotes") {
+        await stepForwardInTests();
       }
       const q0 = getQuoteQuestions()[0];
-      expect(getSessionState().quoteVotesByPlayer).toEqual({});
-      expect(submitQuoteVote(id, q0.id, 1).ok).toBe(true);
-      expect(getSessionState().quoteVotesByPlayer[id]?.[q0.id]).toBe(1);
+      const stateBefore = await getSessionState();
+      expect(stateBefore.quoteVotesByPlayer).toEqual({});
+      expect((await submitQuoteVote(id, q0.id, 1)).ok).toBe(true);
+      const stateAfter = await getSessionState();
+      expect(stateAfter.quoteVotesByPlayer[id]?.[q0.id]).toBe(1);
     });
 
-    it("rejects quote vote when not the active question", () => {
-      const id = registerPlayer("A");
-      while (getSessionState().guestStep !== "game_quotes") {
-        stepForwardInTests();
+    it("rejects quote vote when not the active question", async () => {
+      const id = await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_quotes") {
+        await stepForwardInTests();
       }
       const q1 = getQuoteQuestions()[1]!;
-      expect(submitQuoteVote(id, q1.id, 0)).toEqual({
+      expect(await submitQuoteVote(id, q1.id, 0)).toEqual({
         ok: false,
         error: "wrong_question",
       });
@@ -623,18 +635,17 @@ describe("store", () => {
   });
 
   describe("applyDueTeamMcqRoundAdvance", () => {
-    it("advances question index after each full cycle on the server timeline", () => {
-      registerPlayer("A");
-      while (getSessionState().guestStep !== "game_trivia") {
-        stepForwardInTests();
+    it("advances question index after each full cycle on the server timeline", async () => {
+      await registerPlayer("A");
+      while ((await getSessionState()).guestStep !== "game_trivia") {
+        await stepForwardInTests();
       }
-      const t0 = getSessionState().teamMcqRoundStartedAtEpochMs!;
-      expect(getSessionState().teamMcqRoundIndex).toBe(0);
-      applyDueTeamMcqRoundAdvance(t0 + TEAM_MCQ_CYCLE_MS + 1);
-      expect(getSessionState().teamMcqRoundIndex).toBe(1);
-      expect(getSessionState().teamMcqRoundStartedAtEpochMs).toBe(
-        t0 + TEAM_MCQ_CYCLE_MS
-      );
+      const t0 = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
+      expect((await getSessionState()).teamMcqRoundIndex).toBe(0);
+      await applyDueTeamMcqRoundAdvance(t0 + TEAM_MCQ_CYCLE_MS + 1);
+      const after = await getSessionState();
+      expect(after.teamMcqRoundIndex).toBe(1);
+      expect(after.teamMcqRoundStartedAtEpochMs).toBe(t0 + TEAM_MCQ_CYCLE_MS);
     });
   });
 });

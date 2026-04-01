@@ -11,7 +11,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const playerId = registerPlayer(nickname);
+    const playerId = await registerPlayer(nickname);
     const res = NextResponse.json({ playerId });
     res.cookies.set("playerId", playerId, { path: "/", maxAge: 60 * 60 * 24 });
     return res;

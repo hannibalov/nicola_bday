@@ -15,8 +15,11 @@ jest.mock("next/headers", () => ({
   headers: jest.fn(() => Promise.resolve({ get: () => null })),
 }));
 
-beforeEach(() => {
-  resetSession();
+// Mock Supabase to keep tests local and fast.
+jest.mock("@/lib/supabase");
+
+beforeEach(async () => {
+  await resetSession();
 });
 
 describe("POST /api/admin/reset", () => {
@@ -26,18 +29,19 @@ describe("POST /api/admin/reset", () => {
   });
 
   it("clears players and guest step with key in query", async () => {
-    registerPlayer("Alice");
-    advancePhase();
-    expect(getSessionState().players).toHaveLength(1);
-    expect(getSessionState().guestStep).not.toBe("party_protocol");
+    await registerPlayer("Alice");
+    await advancePhase();
+    expect((await getSessionState()).players).toHaveLength(1);
+    expect((await getSessionState()).guestStep).not.toBe("party_protocol");
 
     const res = await POST(
       new Request(`http://localhost/api/admin/reset?key=${ADMIN_SECRET}`, { method: "POST" })
     );
     expect(res.status).toBe(200);
-    expect(getSessionState().players).toHaveLength(0);
-    expect(getSessionState().guestStep).toBe("party_protocol");
-    expect(getSessionState().revision).toBe(0);
+    const state = await getSessionState();
+    expect(state.players).toHaveLength(0);
+    expect(state.guestStep).toBe("party_protocol");
+    expect(state.revision).toBe(0);
   });
 
   it("accepts x-admin-key header", async () => {
@@ -45,9 +49,9 @@ describe("POST /api/admin/reset", () => {
     (headersFn as jest.Mock).mockResolvedValueOnce({
       get: (name: string) => (name === "x-admin-key" ? ADMIN_SECRET : null),
     });
-    registerPlayer("Bob");
+    await registerPlayer("Bob");
     const res = await POST(new Request("http://localhost/api/admin/reset", { method: "POST" }));
     expect(res.status).toBe(200);
-    expect(getSessionState().players).toHaveLength(0);
+    expect((await getSessionState()).players).toHaveLength(0);
   });
 });
