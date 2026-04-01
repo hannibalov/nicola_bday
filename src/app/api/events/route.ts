@@ -1,37 +1,68 @@
-import { getSessionState } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { formatSseData } from "@/lib/sseFormat";
-import { subscribeSessionChanged } from "@/lib/sessionNotify";
+import type { SessionState } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | null = null;
 
   const stream = new ReadableStream({
-    start(controller) {
-      const send = async () => {
-        try {
-          const s = await getSessionState();
-          controller.enqueue(
-            encoder.encode(
-              formatSseData({
-                revision: s.revision,
-                guestStep: s.guestStep,
-                playerCount: s.players.length,
-              })
-            )
-          );
-        } catch {
-          /* closed */
-        }
+    async start(controller) {
+      // 1. Initial push
+      const { data: initial } = await supabase
+        .from("session_store")
+        .select("data")
+        .eq("id", 1)
+        .single();
+      
+      const sInitial = initial?.data as SessionState;
+      if (sInitial) {
+        controller.enqueue(
+          encoder.encode(
+            formatSseData({
+              revision: sInitial.revision,
+              guestStep: sInitial.guestStep,
+              playerCount: sInitial.players?.length ?? 0,
+            })
+          )
+        );
+      }
+
+      // 2. Subscribe to DB changes
+      const channel = supabase
+        .channel("session_updates")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "session_store", filter: "id=eq.1" },
+          (payload) => {
+            const newData = payload.new as any;
+            if (!newData?.data) return;
+            const s = newData.data as SessionState;
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  formatSseData({
+                    revision: s.revision,
+                    guestStep: s.guestStep,
+                    playerCount: s.players?.length ?? 0,
+                  })
+                )
+              );
+            } catch {
+              // stream closed
+            }
+          }
+        )
+        .subscribe();
+
+      // Return a function to clean up when the stream is cancelled
+      return () => {
+        supabase.removeChannel(channel);
       };
-      unsubscribe = subscribeSessionChanged(send);
-      send();
     },
     cancel() {
-      unsubscribe?.();
-      unsubscribe = null;
+      // Clean up if needed
     },
   });
 

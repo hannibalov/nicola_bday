@@ -71,56 +71,134 @@ const INITIAL_STATE: Omit<
   bingoRoundEndsAtEpochMs: null,
 };
 
-const LOBBY_STEPS_WITH_SCHEDULE: readonly GuestStep[] = [
+const LOBBY_STEPS_WITH_SCHEDULE = new Set<GuestStep>([
   "lobby_trivia",
   "lobby_bingo",
   "lobby_quotes",
-];
+]);
 
 /** 
- * Fetches the shared session state from Supabase.
- * In a production Vercel environment, this ensures all Lambda instances stay in sync.
+ * Fetches the shared session state from Supabase by aggregating multiple tables.
  */
 async function getStoreState(): Promise<SessionState> {
-  const { data, error } = await supabase
+  // 1. Global Session State
+  const { data: sessionData } = await supabase
     .from("session_store")
     .select("data")
     .eq("id", 1)
     .single();
 
-  if (error || !data) {
-    return {
-      ...INITIAL_STATE,
-      games: [...GAMES],
-      players: [],
-      teams: [],
-      gameScores: {},
-      bingoClaimedLineKeysByPlayer: {},
-      bingoMarkedByPlayer: {},
-      triviaVotesByPlayer: {},
-      quoteVotesByPlayer: {},
-      teamMcqRoundIndex: 0,
-      teamMcqRoundStartedAtEpochMs: null,
-    };
-  }
+  const session = (sessionData?.data as SessionState) || {
+    ...INITIAL_STATE,
+    games: [...GAMES],
+  };
 
-  const s = data.data as SessionState;
-  
-  // Ensure non-null objects for maps/sets
-  if (!s.triviaVotesByPlayer) s.triviaVotesByPlayer = {};
-  if (!s.quoteVotesByPlayer) s.quoteVotesByPlayer = {};
-  if (!s.bingoMarkedByPlayer) s.bingoMarkedByPlayer = {};
-  if (!s.bingoSongOrder) s.bingoSongOrder = [];
-  if (s.bingoCurrentSongIndex === undefined) s.bingoCurrentSongIndex = 0;
-  
-  return s;
+  // 2. Players & Teams
+  const [{ data: players }, { data: teams }] = await Promise.all([
+    supabase.from("players").select("*"),
+    supabase.from("teams").select("*"),
+  ]);
+
+  const playerList = (players || []).map((p) => ({ id: p.id, nickname: p.nickname }));
+  session.players = playerList;
+
+  session.teams = (teams || []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    playerIds: (players || [])
+      .filter((p) => p.team_id === t.id)
+      .map((p) => p.id),
+  }));
+
+  // 3. Game Scores
+  const { data: scores } = await supabase.from("game_scores").select("*");
+  session.gameScores = {};
+  (scores || []).forEach((s) => {
+    if (!session.gameScores[s.game_id]) session.gameScores[s.game_id] = {};
+    session.gameScores[s.game_id][s.player_id] = s.score;
+  });
+
+  // 4. Player Game State (Votes, Marks, Claims)
+  const { data: playerStates } = await supabase.from("player_game_state").select("*");
+  session.triviaVotesByPlayer = {};
+  session.quoteVotesByPlayer = {};
+  session.bingoMarkedByPlayer = {};
+  session.bingoClaimedLineKeysByPlayer = {};
+
+  (playerStates || []).forEach((ps) => {
+    session.triviaVotesByPlayer[ps.player_id] = ps.trivia_votes || {};
+    session.quoteVotesByPlayer[ps.player_id] = ps.quote_votes || {};
+    session.bingoMarkedByPlayer[ps.player_id] = ps.bingo_marked || [];
+    session.bingoClaimedLineKeysByPlayer[ps.player_id] = ps.bingo_claimed_keys || [];
+  });
+
+  // Fallback defaults
+  if (!session.bingoSongOrder) session.bingoSongOrder = [];
+  if (session.bingoCurrentSongIndex === undefined) session.bingoCurrentSongIndex = 0;
+
+  return session;
 }
 
-/** Persists the modified state back to the shared Supabase table. */
+/** Persists the modified state back to normalized Supabase tables. */
 async function commitState(state: SessionState): Promise<void> {
+  // 1. Narrow the global data column
+  const {
+    players,
+    teams,
+    gameScores,
+    bingoClaimedLineKeysByPlayer,
+    bingoMarkedByPlayer,
+    triviaVotesByPlayer,
+    quoteVotesByPlayer,
+    ...globalData
+  } = state;
+
+  // 2. Update Global Store
   await supabase
     .from("session_store")
-    .upsert({ id: 1, data: state, last_revision: state.revision });
+    .upsert({ id: 1, data: globalData, last_revision: state.revision });
+
+  // 3. Sync Players/Teams (if they were modified in the local state object)
+  // To keep it simple but robust, we'll perform bulk updates here.
+  if (teams) {
+    for (const t of teams) {
+      await supabase.from("teams").upsert({ id: t.id, name: t.name });
+      // Bulk update player team_ids
+      if (t.playerIds.length > 0) {
+        await supabase
+          .from("players")
+          .update({ team_id: t.id })
+          .in("id", t.playerIds);
+      }
+    }
+  }
+
+  // 4. Sync Scores
+  if (gameScores) {
+    for (const [gameId, scores] of Object.entries(gameScores)) {
+      for (const [playerId, score] of Object.entries(scores)) {
+        await supabase.from("game_scores").upsert({ game_id: gameId, player_id: playerId, score });
+      }
+    }
+  }
+
+  // 5. Sync Volatile Game State
+  const playerIds = new Set([
+    ...Object.keys(triviaVotesByPlayer || {}),
+    ...Object.keys(quoteVotesByPlayer || {}),
+    ...Object.keys(bingoMarkedByPlayer || {}),
+    ...Object.keys(bingoClaimedLineKeysByPlayer || {}),
+  ]);
+
+  for (const pid of playerIds) {
+    await supabase.from("player_game_state").upsert({
+      player_id: pid,
+      trivia_votes: triviaVotesByPlayer?.[pid] || {},
+      quote_votes: quoteVotesByPlayer?.[pid] || {},
+      bingo_marked: bingoMarkedByPlayer?.[pid] || [],
+      bingo_claimed_keys: bingoClaimedLineKeysByPlayer?.[pid] || [],
+    });
+  }
 }
 
 function generateId(): string {
@@ -157,7 +235,7 @@ export async function applyDueScheduledTransitions(
 ): Promise<void> {
   const state = await getStoreState();
   if (state.scheduledGameStartsAtEpochMs == null) return;
-  if (!LOBBY_STEPS_WITH_SCHEDULE.includes(state.guestStep)) return;
+  if (!LOBBY_STEPS_WITH_SCHEDULE.has(state.guestStep)) return;
   if (nowMs < state.scheduledGameStartsAtEpochMs) return;
 
   const from = state.guestStep;
@@ -577,7 +655,27 @@ export async function submitQuoteVote(playerId: string, questionId: string, opti
 export async function registerPlayer(nickname: string): Promise<string> {
   const id = generateId();
   const state = await getStoreState();
+
+  // Robustness: Handle late joins by assigning to the smallest team if game is active
+  let teamId = null;
+  const game = gameSlotFromGuestStep(state.guestStep);
+  if (game !== null && state.teams.length > 0) {
+    const teamsWithCounts = state.teams.map((t) => ({
+      id: t.id,
+      count: t.playerIds.length,
+    }));
+    teamsWithCounts.sort((a, b) => a.count - b.count);
+    teamId = teamsWithCounts[0]?.id || null;
+  }
+
+  // Create child records first
+  await Promise.all([
+    supabase.from("players").insert({ id, nickname, team_id: teamId }),
+    supabase.from("player_game_state").insert({ player_id: id }),
+  ]);
+
   state.players.push({ id, nickname });
+  state.revision += 1;
   await commitState(state);
   notifySessionChanged();
   return id;
@@ -676,9 +774,9 @@ export async function advancePhase(): Promise<void> {
   const state = await getStoreState();
   const from = state.guestStep;
 
-  if (LOBBY_STEPS_WITH_SCHEDULE.includes(from) && state.scheduledGameStartsAtEpochMs != null) return;
+  if (LOBBY_STEPS_WITH_SCHEDULE.has(from) && state.scheduledGameStartsAtEpochMs != null) return;
 
-  if (LOBBY_STEPS_WITH_SCHEDULE.includes(from) && state.scheduledGameStartsAtEpochMs == null) {
+  if (LOBBY_STEPS_WITH_SCHEDULE.has(from) && state.scheduledGameStartsAtEpochMs == null) {
     state.scheduledGameStartsAtEpochMs = Date.now() + LOBBY_PRE_GAME_LEAD_MS;
     state.revision += 1;
     await commitState(state);
@@ -697,6 +795,14 @@ export async function advancePhase(): Promise<void> {
 }
 
 export async function resetSession(): Promise<void> {
+  // 1. Delete all rows from related tables as requested
+  await Promise.all([
+    supabase.from("players").delete().neq("id", "0"), // Delete all
+    supabase.from("teams").delete().neq("id", "0"),
+    supabase.from("game_scores").delete().neq("game_id", "0"),
+    supabase.from("player_game_state").delete().neq("player_id", "0"),
+  ]);
+
   const nextState = {
     ...INITIAL_STATE,
     games: GAMES,
@@ -711,6 +817,7 @@ export async function resetSession(): Promise<void> {
     teamMcqRoundIndex: 0,
     teamMcqRoundStartedAtEpochMs: null,
   };
+  
   await commitState(nextState as SessionState);
   notifySessionChanged();
 }

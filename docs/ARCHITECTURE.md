@@ -296,6 +296,7 @@ Detailed briefs for parallel work. **Each brief includes mandatory `## TDD (requ
 | [game-trivia-team.md](./game-trivia-team.md) | Team trivia (majority, scoring) |
 | [game-music-bingo.md](./game-music-bingo.md) | Music bingo: 50-title pool, host playlist, marks/claims, 15 min round, scoring |
 | [game-identify-quote-team.md](./game-identify-quote-team.md) | Team quotes + new teams |
+| [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) | Normalized database structure & SQL |
 
 ---
 
