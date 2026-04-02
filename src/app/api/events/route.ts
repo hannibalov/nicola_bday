@@ -16,7 +16,7 @@ export async function GET() {
         .select("*")
         .eq("id", 1)
         .single();
-      
+
       if (initial) {
         const state = await getSessionState();
         controller.enqueue(

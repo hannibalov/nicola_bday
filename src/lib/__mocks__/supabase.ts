@@ -27,7 +27,7 @@ const subscriptions: Array<{
 export { subscriptions };
 
 const createMockBuilder = (table: string) => {
-  let filterGroups: Array<{col: string, val: any, type: 'eq'|'neq'|'in'|'match'}> = [];
+  let filterGroups: Array<{ col: string, val: any, type: 'eq' | 'neq' | 'in' | 'match' }> = [];
   let operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
   let payload: any = null;
   let single = false;
@@ -38,21 +38,21 @@ const createMockBuilder = (table: string) => {
     upsert: jest.fn((p) => { operation = 'upsert'; payload = p; return builder; }),
     update: jest.fn((v) => { operation = 'update'; payload = v; return builder; }),
     delete: jest.fn(() => { operation = 'delete'; return builder; }),
-    
-    eq: jest.fn((col: string, val: any) => { filterGroups.push({col, val, type:'eq'}); return builder; }),
-    neq: jest.fn((col: string, val: any) => { filterGroups.push({col, val, type:'neq'}); return builder; }),
-    in: jest.fn((col: string, val: any) => { filterGroups.push({col, val, type:'in'}); return builder; }),
-    match: jest.fn((val: any) => { filterGroups.push({col: '', val, type:'match'}); return builder; }),
+
+    eq: jest.fn((col: string, val: any) => { filterGroups.push({ col, val, type: 'eq' }); return builder; }),
+    neq: jest.fn((col: string, val: any) => { filterGroups.push({ col, val, type: 'neq' }); return builder; }),
+    in: jest.fn((col: string, val: any) => { filterGroups.push({ col, val, type: 'in' }); return builder; }),
+    match: jest.fn((val: any) => { filterGroups.push({ col: '', val, type: 'match' }); return builder; }),
     single: jest.fn(() => { single = true; return builder; }),
 
     async then(resolve: any, reject: any) {
       if (!tableQueues[table]) tableQueues[table] = Promise.resolve();
-      
+
       const execute = async () => {
         try {
           let result: any = { data: null, error: null };
           const tableStore = stores[table] || [];
-          
+
           let matchedRows = [...tableStore];
           for (const f of filterGroups) {
             if (f.type === 'eq') matchedRows = matchedRows.filter(r => r[f.col] === f.val);
@@ -72,14 +72,14 @@ const createMockBuilder = (table: string) => {
             const newStore = [...stores[table]];
             rows.forEach(row => {
               const idx = newStore.findIndex(r => {
-                  if (table === 'session' && r.id === row.id) return true;
-                  if (table === 'players' && r.id === row.id) return true;
-                  if (table === 'teams' && r.id === row.id) return true;
-                  if (table === 'game_scores' && r.game_id === row.game_id && r.player_id === row.player_id) return true;
-                  if (table === 'votes' && r.player_id === row.player_id && r.game_id === row.game_id && r.question_id === row.question_id) return true;
-                  if (table === 'bingo_marks' && r.player_id === row.player_id && r.cell_index === row.cell_index) return true;
-                  if (table === 'bingo_claims' && r.player_id === row.player_id && r.line_key === row.line_key) return true;
-                  return false;
+                if (table === 'session' && r.id === row.id) return true;
+                if (table === 'players' && r.id === row.id) return true;
+                if (table === 'teams' && r.id === row.id) return true;
+                if (table === 'game_scores' && r.game_id === row.game_id && r.player_id === row.player_id) return true;
+                if (table === 'votes' && r.player_id === row.player_id && r.game_id === row.game_id && r.question_id === row.question_id) return true;
+                if (table === 'bingo_marks' && r.player_id === row.player_id && r.cell_index === row.cell_index) return true;
+                if (table === 'bingo_claims' && r.player_id === row.player_id && r.line_key === row.line_key) return true;
+                return false;
               });
               if (idx >= 0) newStore[idx] = { ...newStore[idx], ...row };
               else newStore.push(row);
@@ -100,8 +100,8 @@ const createMockBuilder = (table: string) => {
           } else if (operation === 'update') {
             const matchedFingerprints = new Set(matchedRows.map(m => JSON.stringify(m)));
             stores[table] = tableStore.map(r => {
-                if (matchedFingerprints.has(JSON.stringify(r))) return { ...r, ...payload };
-                return r;
+              if (matchedFingerprints.has(JSON.stringify(r))) return { ...r, ...payload };
+              return r;
             });
             result.data = payload;
           } else if (operation === 'delete') {
@@ -112,7 +112,7 @@ const createMockBuilder = (table: string) => {
           if (single) {
             result.data = result.data?.[0] || null;
           }
-          
+
           return result;
         } catch (err) {
           throw err;

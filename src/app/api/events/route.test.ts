@@ -54,9 +54,9 @@ describe("GET /api/events", () => {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     await reader.read(); // initial
-    
+
     await advancePhase();
-    
+
     const second = await reader.read();
     expect(second.done).toBe(false);
     expect(decoder.decode(second.value)).toContain("lobby_trivia");
@@ -70,16 +70,16 @@ describe("GET /api/events", () => {
     await reader.read(); // consume initial
 
     await registerPlayer("NewPlayer");
-    
+
     // Manually trigger a session update to simulate real-time notification
     const sessionSub = subscriptions.find(s => s.table === 'session');
     if (sessionSub) {
       sessionSub.callback({
-        eventType: 'UPDATE', 
+        eventType: 'UPDATE',
         new: { id: 1, guest_step: "party_protocol", revision: 1 }
       });
     }
-    
+
     const { value } = await reader.read();
     const text = decoder.decode(value || new Uint8Array());
     const parsed = JSON.parse(text.replace(/^data: /, "").trim()) as Record<string, unknown>;
