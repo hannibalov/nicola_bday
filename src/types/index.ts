@@ -26,7 +26,7 @@ export const GUEST_STEP_SEQUENCE: readonly GuestStep[] = [
 export function getNextGuestStep(current: GuestStep): GuestStep | null {
   const i = GUEST_STEP_SEQUENCE.indexOf(current);
   if (i < 0 || i >= GUEST_STEP_SEQUENCE.length - 1) return null;
-  return GUEST_STEP_SEQUENCE[i + 1]!;
+  return GUEST_STEP_SEQUENCE[i + 1];
 }
 
 export type GameType = "individual" | "team";
@@ -52,8 +52,6 @@ export interface GameConfig {
 export interface SessionState {
   guestStep: GuestStep;
   revision: number;
-  /** @deprecated Lobby countdown uses {@link scheduledGameStartsAtEpochMs}; kept for older tests. */
-  countdownRemaining: number | null;
   /**
    * When set during a lobby step, server transitions to the matching game at this instant (after buffer + 60s + Go!).
    */
@@ -101,7 +99,6 @@ export interface PublicState {
   guestStep: GuestStep;
   revision: number;
   currentGameIndex: number;
-  countdownRemaining: number | null;
   /** Same as session; clients derive local countdown from this + shared constants. */
   scheduledGameStartsAtEpochMs: number | null;
   currentGame: GameConfig | null;

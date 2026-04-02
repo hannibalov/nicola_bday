@@ -7,12 +7,11 @@ import {
   registerPlayer,
   advancePhase,
   getSessionState,
-  applyDueScheduledTransitions,
 } from "@/lib/store";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 
-beforeEach(() => {
-  resetSession();
+beforeEach(async () => {
+  await resetSession();
 });
 
 function authJsonHeaders(playerId: string): HeadersInit {
@@ -22,16 +21,23 @@ function authJsonHeaders(playerId: string): HeadersInit {
   };
 }
 
-function advanceUntilGameQuotes() {
-  registerPlayer("Alice");
+async function advanceUntilGameQuotes() {
+  await registerPlayer("Alice");
   let guard = 0;
-  while (getSessionState().guestStep !== "game_quotes" && guard < 50) {
-    advancePhase();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+  let now = Date.now();
+  while (guard < 50) {
+    const s = await getSessionState(now);
+    if (s.guestStep === "game_quotes") break;
+    await advancePhase(now);
+    const after = await getSessionState(now);
+    if (after.scheduledGameStartsAtEpochMs != null) {
+      now = after.scheduledGameStartsAtEpochMs + 1;
+    } else {
+      now += 1000;
+    }
     guard++;
   }
-  expect(getSessionState().guestStep).toBe("game_quotes");
+  expect((await getSessionState()).guestStep).toBe("game_quotes");
 }
 
 describe("POST /api/game/quotes/vote", () => {
@@ -50,7 +56,7 @@ describe("POST /api/game/quotes/vote", () => {
   });
 
   it("returns 400 when quotes game is not active", async () => {
-    const id = registerPlayer("Bob");
+    const id = await registerPlayer("Bob");
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
         method: "POST",
@@ -67,8 +73,8 @@ describe("POST /api/game/quotes/vote", () => {
   });
 
   it("records vote during game_quotes", async () => {
-    advanceUntilGameQuotes();
-    const id = getSessionState().players[0]!.id;
+    await advanceUntilGameQuotes();
+    const id = (await getSessionState()).players[0]!.id;
     const q = getQuoteQuestions()[0];
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
@@ -81,14 +87,13 @@ describe("POST /api/game/quotes/vote", () => {
       })
     );
     expect(res.status).toBe(200);
-    expect(getSessionState().quoteVotesByPlayer[id]?.[q.id]).toBe(
-      q.correctIndex
-    );
+    const state = await getSessionState();
+    expect(state.quoteVotesByPlayer[id]?.[q.id]).toBe(q.correctIndex);
   });
 
   it("returns 400 for unknown question id", async () => {
-    advanceUntilGameQuotes();
-    const id = getSessionState().players[0]!.id;
+    await advanceUntilGameQuotes();
+    const id = (await getSessionState()).players[0]!.id;
     const res = await POST(
       new Request("http://localhost/api/game/quotes/vote", {
         method: "POST",

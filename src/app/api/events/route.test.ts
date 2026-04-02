@@ -7,7 +7,8 @@ import { advancePhase, resetSession, registerPlayer } from "@/lib/store";
 // Mock Supabase
 jest.mock("@/lib/supabase");
 
-beforeEach(async () => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   await resetSession();
 });
 
@@ -39,40 +40,37 @@ describe("GET /api/events", () => {
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     const { value } = await reader!.read();
-    const text = decoder.decode(value);
+    const text = decoder.decode(value || new Uint8Array());
     const parsed = JSON.parse(text.replace(/^data: /, "").trim()) as Record<string, unknown>;
     expect(parsed.playerCount).toBe(2);
     reader!.cancel();
   });
 
-  // Note: These tests might be slow due to the 1.5s polling loop in the real route.
-  // We use a longer timeout for these specific tests.
   it("pushes updated guestStep after session notify", async () => {
     const res = await GET();
-    const reader = res.body?.getReader();
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder();
-    await reader!.read(); // initial
+    await reader.read(); // initial
     
     await advancePhase();
     
-    // We expect the loop to pick up the change eventually
-    const second = await reader!.read();
+    const second = await reader.read();
     expect(second.done).toBe(false);
     expect(decoder.decode(second.value)).toContain("lobby_trivia");
-    reader!.cancel();
+    reader.cancel();
   }, 10000);
 
   it("SSE frame after player registers includes updated playerCount", async () => {
     const res = await GET();
-    const reader = res.body?.getReader();
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder();
-    await reader!.read(); // consume initial
+    await reader.read(); // consume initial
 
     await registerPlayer("NewPlayer");
-    const { value } = await reader!.read();
-    const text = decoder.decode(value);
+    const { value } = await reader.read();
+    const text = decoder.decode(value || new Uint8Array());
     const parsed = JSON.parse(text.replace(/^data: /, "").trim()) as Record<string, unknown>;
     expect(parsed.playerCount).toBe(1);
-    reader!.cancel();
+    reader.cancel();
   }, 10000);
 });

@@ -25,7 +25,8 @@ import {
 } from "./clientStorage";
 
 describe("clientStorage", () => {
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     localStorage.clear();
     sessionStorage.clear();
     document.cookie = "playerId=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";

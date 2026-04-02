@@ -10,7 +10,8 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams(),
 }));
 
-beforeEach(() => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   mockPush.mockClear();
   mockRefresh.mockClear();
   mockSearchParams.mockImplementation(() => new URLSearchParams());

@@ -69,7 +69,8 @@ type MockEventSource = {
 
 let lastEventSource: MockEventSource | null = null;
 
-beforeEach(() => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   mockReplace.mockClear();
   currentSearchParams = new URLSearchParams();
   fetchMock.mockReset();

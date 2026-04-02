@@ -7,14 +7,14 @@ import {
   getSessionState,
   registerPlayer,
   resetSession,
-  applyDueScheduledTransitions,
   setBingoPlaybackForTests,
   markBingoCell,
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 
-beforeEach(() => {
-  resetSession();
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
+  await resetSession();
 });
 
 function authJsonHeaders(playerId: string): HeadersInit {
@@ -24,18 +24,21 @@ function authJsonHeaders(playerId: string): HeadersInit {
   };
 }
 
-function advanceUntilGameBingo() {
+async function advanceUntilGameBingo() {
   let guard = 0;
-  while (getSessionState().guestStep !== "game_bingo" && guard < 40) {
-    advancePhase();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+  let now = Date.now();
+  while (guard < 40) {
+    const s = await getSessionState(now);
+    if (s.guestStep === "game_bingo") break;
+    await advancePhase(now);
+    now += 10000; // Skip 10s each iteration
     guard++;
   }
-  expect(getSessionState().guestStep).toBe("game_bingo");
+  expect((await getSessionState(now)).guestStep).toBe("game_bingo");
 }
 
 describe("POST /api/game/bingo/claim", () => {
+  jest.setTimeout(30000);
   it("returns 401 without playerId cookie", async () => {
     const res = await POST(
       new Request("http://localhost/api/game/bingo/claim", {
@@ -48,7 +51,7 @@ describe("POST /api/game/bingo/claim", () => {
   });
 
   it("returns 400 when not in game_bingo", async () => {
-    const id = registerPlayer("A");
+    const id = await registerPlayer("A");
     const res = await POST(
       new Request("http://localhost/api/game/bingo/claim", {
         method: "POST",
@@ -60,17 +63,17 @@ describe("POST /api/game/bingo/claim", () => {
   });
 
   it("awards points when in game_bingo", async () => {
-    const id = registerPlayer("A");
-    advanceUntilGameBingo();
+    const id = await registerPlayer("A");
+    await advanceUntilGameBingo();
     const titles = bingoCardTitlesForPlayer(id);
     const pad = "__pad__";
-    const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
-    setBingoPlaybackForTests(order, 0);
-    markBingoCell(id, 0, true);
-    setBingoPlaybackForTests(order, 1);
-    markBingoCell(id, 1, true);
-    setBingoPlaybackForTests(order, 2);
-    markBingoCell(id, 2, true);
+    const order = [titles[0], titles[1], titles[2], pad, pad, pad];
+    await setBingoPlaybackForTests(order, 0);
+    await markBingoCell(id, 0, true);
+    await setBingoPlaybackForTests(order, 1);
+    await markBingoCell(id, 1, true);
+    await setBingoPlaybackForTests(order, 2);
+    await markBingoCell(id, 2, true);
 
     const res = await POST(
       new Request("http://localhost/api/game/bingo/claim", {

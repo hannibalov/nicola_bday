@@ -12,7 +12,8 @@ jest.mock("next/navigation", () => ({
 }));
 
 describe("GuestEntryFlow", () => {
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     mockPrefetch.mockClear();
     mockSearchParams.mockImplementation(() => new URLSearchParams());
     localStorage.clear();

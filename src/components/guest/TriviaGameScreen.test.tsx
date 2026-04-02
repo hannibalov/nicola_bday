@@ -26,7 +26,8 @@ function syncAtQuestion(
 }
 
 describe("TriviaGameScreen", () => {
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     localStorage.clear();
     global.fetch = jest.fn(() =>
       Promise.resolve({

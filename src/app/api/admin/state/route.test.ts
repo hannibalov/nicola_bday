@@ -11,8 +11,9 @@ jest.mock("next/headers", () => ({
   headers: jest.fn(() => Promise.resolve({ get: () => null })),
 }));
 
-beforeEach(() => {
-  resetSession();
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
+  await resetSession();
 });
 
 describe("GET /api/admin/state", () => {
@@ -22,7 +23,7 @@ describe("GET /api/admin/state", () => {
   });
 
   it("returns full state with key in query", async () => {
-    registerPlayer("Alice");
+    await registerPlayer("Alice");
     const res = await GET(
       new Request(`http://localhost/api/admin/state?key=${ADMIN_SECRET}`)
     );

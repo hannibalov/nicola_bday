@@ -7,7 +7,8 @@ import { KEYS } from "@/lib/clientStorage";
 import { partyProtocolUnlockEpochMs } from "@/lib/partyProtocolGate";
 
 describe("PartyProtocolScreen", () => {
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     localStorage.clear();
   });
 

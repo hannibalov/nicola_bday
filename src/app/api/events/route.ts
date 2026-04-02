@@ -11,19 +11,18 @@ export async function GET() {
     async start(controller) {
       // 1. Initial push
       const { data: initial } = await supabase
-        .from("session_store")
-        .select("data")
+        .from("session")
+        .select("*")
         .eq("id", 1)
         .single();
       
-      const sInitial = initial?.data as SessionState;
-      if (sInitial) {
+      if (initial) {
         controller.enqueue(
           encoder.encode(
             formatSseData({
-              revision: sInitial.revision,
-              guestStep: sInitial.guestStep,
-              playerCount: sInitial.players?.length ?? 0,
+              revision: initial.revision,
+              guestStep: initial.guest_step,
+              playerCount: 0, // Placeholder; client will refetch full state
             })
           )
         );
@@ -34,18 +33,17 @@ export async function GET() {
         .channel("session_updates")
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "session_store", filter: "id=eq.1" },
+          { event: "*", schema: "public", table: "session", filter: "id=eq.1" },
           (payload) => {
             const newData = payload.new as any;
-            if (!newData?.data) return;
-            const s = newData.data as SessionState;
+            if (!newData) return;
             try {
               controller.enqueue(
                 encoder.encode(
                   formatSseData({
-                    revision: s.revision,
-                    guestStep: s.guestStep,
-                    playerCount: s.players?.length ?? 0,
+                    revision: newData.revision,
+                    guestStep: newData.guest_step,
+                    playerCount: 0, // Placeholder
                   })
                 )
               );

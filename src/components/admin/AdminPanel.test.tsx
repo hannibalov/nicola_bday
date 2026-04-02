@@ -41,7 +41,8 @@ type MockEventSource = {
 
 let lastEventSource: MockEventSource | null = null;
 
-beforeEach(() => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   searchParamsMock.keyFromUrl = "admin-secret";
   mockFetch.mockClear();
   (globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;

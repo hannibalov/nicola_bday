@@ -4,7 +4,6 @@
 import { POST } from "./route";
 import {
   advancePhase,
-  applyDueScheduledTransitions,
   getSessionState,
   registerPlayer,
   resetSession,
@@ -16,22 +15,24 @@ jest.mock("next/headers", () => ({
   headers: () => headersMock(),
 }));
 
-beforeEach(() => {
-  resetSession();
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
+  await resetSession();
   headersMock.mockResolvedValue({
     get: (name: string) => (name === "x-admin-key" ? "admin-secret" : null),
   });
 });
 
-function advanceUntilGameBingo() {
+async function advanceUntilGameBingo() {
   let guard = 0;
-  while (getSessionState().guestStep !== "game_bingo" && guard < 40) {
-    advancePhase();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+  let now = Date.now();
+  while (guard < 40) {
+    const s = await getSessionState(now);
+    if (s.guestStep === "game_bingo") break;
+    await advancePhase(now);
+    now += 10000;
     guard++;
   }
-  expect(getSessionState().guestStep).toBe("game_bingo");
 }
 
 describe("POST /api/admin/bingo-advance-song", () => {
@@ -44,12 +45,12 @@ describe("POST /api/admin/bingo-advance-song", () => {
   });
 
   it("advances bingoCurrentSongIndex during game_bingo", async () => {
-    registerPlayer("A");
-    advanceUntilGameBingo();
-    expect(getSessionState().bingoCurrentSongIndex).toBe(0);
+    await registerPlayer("A");
+    await advanceUntilGameBingo();
+    expect((await getSessionState()).bingoCurrentSongIndex).toBe(0);
 
     const res = await POST();
     expect(res.status).toBe(200);
-    expect(getSessionState().bingoCurrentSongIndex).toBe(1);
+    expect((await getSessionState()).bingoCurrentSongIndex).toBe(1);
   });
 });

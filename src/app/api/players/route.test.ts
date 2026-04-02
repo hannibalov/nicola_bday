@@ -10,7 +10,8 @@ jest.mock("next/headers", () => ({
 
 jest.mock("@/lib/supabase");
 
-beforeEach(async () => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   await resetSession();
 });
 

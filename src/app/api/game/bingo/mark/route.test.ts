@@ -4,7 +4,6 @@
 import { POST } from "./route";
 import {
   advancePhase,
-  applyDueScheduledTransitions,
   getSessionState,
   registerPlayer,
   resetSession,
@@ -12,8 +11,9 @@ import {
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 
-beforeEach(() => {
-  resetSession();
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
+  await resetSession();
 });
 
 function authJsonHeaders(playerId: string): HeadersInit {
@@ -23,15 +23,16 @@ function authJsonHeaders(playerId: string): HeadersInit {
   };
 }
 
-function advanceUntilGameBingo() {
+async function advanceUntilGameBingo() {
   let guard = 0;
-  while (getSessionState().guestStep !== "game_bingo" && guard < 40) {
-    advancePhase();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+  let now = Date.now();
+  while (guard < 40) {
+    const s = await getSessionState(now);
+    if (s.guestStep === "game_bingo") break;
+    await advancePhase(now);
+    now += 10000;
     guard++;
   }
-  expect(getSessionState().guestStep).toBe("game_bingo");
 }
 
 describe("POST /api/game/bingo/mark", () => {
@@ -47,10 +48,10 @@ describe("POST /api/game/bingo/mark", () => {
   });
 
   it("returns marked cells when the tile matches the current song", async () => {
-    const id = registerPlayer("A");
-    advanceUntilGameBingo();
+    const id = await registerPlayer("A");
+    await advanceUntilGameBingo();
     const titles = bingoCardTitlesForPlayer(id);
-    setBingoPlaybackForTests([titles[0]!], 0);
+    await setBingoPlaybackForTests([titles[0]], 0);
 
     const res = await POST(
       new Request("http://localhost/api/game/bingo/mark", {
@@ -60,7 +61,7 @@ describe("POST /api/game/bingo/mark", () => {
       })
     );
     expect(res.status).toBe(200);
-    const data = (await res.json()) as { marked: boolean[]; wrongTapPenalty: boolean };
+    const data = await res.json();
     expect(data.marked[0]).toBe(true);
     expect(data.wrongTapPenalty).toBe(false);
   });

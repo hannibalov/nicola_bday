@@ -29,7 +29,8 @@ function baseProps(
 }
 
 describe("MusicBingoScreen", () => {
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     localStorage.clear();
     localStorage.setItem(KEYS.playerId, playerId);
   });

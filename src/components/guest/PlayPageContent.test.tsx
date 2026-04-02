@@ -22,7 +22,8 @@ jest.mock("./PlayView", () => ({
 describe("PlayPageContent", () => {
   const origFetch = global.fetch;
 
-  beforeEach(() => {
+  jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
     localStorage.clear();
     sessionStorage.clear();
     mockReplace.mockClear();

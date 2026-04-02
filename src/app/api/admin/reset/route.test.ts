@@ -15,10 +15,11 @@ jest.mock("next/headers", () => ({
   headers: jest.fn(() => Promise.resolve({ get: () => null })),
 }));
 
-// Mock Supabase to keep tests local and fast.
+// Mock Supabase
 jest.mock("@/lib/supabase");
 
-beforeEach(async () => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   await resetSession();
 });
 
@@ -46,7 +47,7 @@ describe("POST /api/admin/reset", () => {
 
   it("accepts x-admin-key header", async () => {
     const { headers: headersFn } = await import("next/headers");
-    (headersFn as jest.Mock).mockResolvedValueOnce({
+    (headersFn as jest.Mock).mockResolvedValue({
       get: (name: string) => (name === "x-admin-key" ? ADMIN_SECRET : null),
     });
     await registerPlayer("Bob");

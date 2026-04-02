@@ -15,8 +15,7 @@ import {
   resetSession,
   getSessionState,
   setBingoPlaybackForTests,
-  applyDueScheduledTransitions,
-  applyDueTeamMcqRoundAdvance,
+  advancePhase,
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 import type { GuestStep } from "@/types";
@@ -101,11 +100,18 @@ async function adminStartNext(): Promise<void> {
 
 async function advanceGuestStepUntil(target: GuestStep) {
   let guard = 0;
-  while ((await getSessionState()).guestStep !== target && guard < 50) {
+  let now = Date.now();
+  while (guard < 50) {
+    const s = await getSessionState(now);
+    if (s.guestStep === target) break;
     await adminStartNext();
-    const state = await getSessionState();
-    const t = state.scheduledGameStartsAtEpochMs;
-    if (t != null) await applyDueScheduledTransitions(t + 1);
+    const after = await getSessionState(now);
+    if (after.scheduledGameStartsAtEpochMs != null) {
+      now = after.scheduledGameStartsAtEpochMs + 1;
+      await advancePhase(now);
+    } else {
+      now += 1000;
+    }
     guard++;
   }
   expect((await getSessionState()).guestStep).toBe(target);
@@ -171,7 +177,6 @@ describe("session flow integration (HTTP + store)", () => {
     const afterGame = await readPublicState();
     expect(afterGame.guestStep).toBe("leaderboard_post_trivia");
     expect(afterGame.leaderboard.length).toBeGreaterThanOrEqual(1);
-    // Team trivia leaderboard entries are team names, not player nicknames.
     expect(afterGame.leaderboard.some((e) => /^Team \d+/.test(e.name))).toBe(true);
   });
 
@@ -195,7 +200,7 @@ describe("session flow integration (HTTP + store)", () => {
 
     const titles = bingoCardTitlesForPlayer(id);
     const pad = "__pad__";
-    const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
+    const order = [titles[0], titles[1], titles[2], pad, pad, pad];
     await setBingoPlaybackForTests(order, 0);
     setPlayerCookie(id);
     async function markCell(cellIndex: number, mark: boolean) {
@@ -310,7 +315,7 @@ describe("session flow integration (HTTP + store)", () => {
   it("trivia scoring integration: team all-correct matches store round scores", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) {
-      ids.push(await registerViaApi(`TeamP${i}`));
+       ids.push(await registerViaApi(`TeamP${i}`));
     }
     await advanceGuestStepUntil("game_trivia");
     
@@ -331,7 +336,7 @@ describe("session flow integration (HTTP + store)", () => {
       }
       if (qi < TRIVIA_QUESTIONS.length - 1) {
         t += TEAM_MCQ_CYCLE_MS + 1;
-        await applyDueTeamMcqRoundAdvance(t);
+        await advancePhase(t);
       }
     }
     await adminStartNext();

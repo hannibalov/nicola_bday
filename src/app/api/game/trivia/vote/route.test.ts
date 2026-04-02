@@ -7,12 +7,11 @@ import {
   registerPlayer,
   advancePhase,
   getSessionState,
-  applyDueScheduledTransitions,
 } from "@/lib/store";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
 
-beforeEach(() => {
-  resetSession();
+beforeEach(async () => {
+  await resetSession();
 });
 
 function authJsonHeaders(playerId: string): HeadersInit {
@@ -22,16 +21,23 @@ function authJsonHeaders(playerId: string): HeadersInit {
   };
 }
 
-function advanceUntilGameTrivia() {
-  registerPlayer("Alice");
+async function advanceUntilGameTrivia() {
+  await registerPlayer("Alice");
   let guard = 0;
-  while (getSessionState().guestStep !== "game_trivia" && guard < 40) {
-    advancePhase();
-    const t = getSessionState().scheduledGameStartsAtEpochMs;
-    if (t != null) applyDueScheduledTransitions(t + 1);
+  let now = Date.now();
+  while (guard < 40) {
+    const s = await getSessionState(now);
+    if (s.guestStep === "game_trivia") break;
+    await advancePhase(now);
+    const after = await getSessionState(now);
+    if (after.scheduledGameStartsAtEpochMs != null) {
+      now = after.scheduledGameStartsAtEpochMs + 1;
+    } else {
+      now += 1000;
+    }
     guard++;
   }
-  expect(getSessionState().guestStep).toBe("game_trivia");
+  expect((await getSessionState()).guestStep).toBe("game_trivia");
 }
 
 describe("POST /api/game/trivia/vote", () => {
@@ -47,7 +53,7 @@ describe("POST /api/game/trivia/vote", () => {
   });
 
   it("returns 400 when trivia is not active", async () => {
-    const id = registerPlayer("Bob");
+    const id = await registerPlayer("Bob");
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
         method: "POST",
@@ -61,8 +67,8 @@ describe("POST /api/game/trivia/vote", () => {
   });
 
   it("records vote during game_trivia", async () => {
-    advanceUntilGameTrivia();
-    const id = getSessionState().players[0]!.id;
+    await advanceUntilGameTrivia();
+    const id = (await getSessionState()).players[0]!.id;
     const q = TRIVIA_QUESTIONS[0];
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
@@ -72,14 +78,13 @@ describe("POST /api/game/trivia/vote", () => {
       })
     );
     expect(res.status).toBe(200);
-    expect(getSessionState().triviaVotesByPlayer[id]?.[q.id]).toBe(
-      q.correctIndex
-    );
+    const state = await getSessionState();
+    expect(state.triviaVotesByPlayer[id]?.[q.id]).toBe(q.correctIndex);
   });
 
   it("returns 400 for unknown question id", async () => {
-    advanceUntilGameTrivia();
-    const id = getSessionState().players[0]!.id;
+    await advanceUntilGameTrivia();
+    const id = (await getSessionState()).players[0]!.id;
     const res = await POST(
       new Request("http://localhost/api/game/trivia/vote", {
         method: "POST",

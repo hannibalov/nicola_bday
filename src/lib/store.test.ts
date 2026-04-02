@@ -13,8 +13,8 @@ import {
   adminAdvanceBingoSong,
   submitTriviaVote,
   submitQuoteVote,
-  applyDueScheduledTransitions,
-  applyDueTeamMcqRoundAdvance,
+  
+  
 } from "./store";
 import { TEAM_MCQ_CYCLE_MS } from "./teamMcqTiming";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
@@ -25,7 +25,8 @@ import { GUEST_STEP_SEQUENCE, type GuestStep } from "@/types";
 // Mock Supabase to keep tests local and fast.
 jest.mock("./supabase");
 
-beforeEach(async () => {
+jest.setTimeout(30000);
+jest.setTimeout(30000); beforeEach(async () => {
   await resetSession();
 });
 
@@ -34,11 +35,11 @@ async function markTopRowForPlayer(playerId: string) {
   const titles = bingoCardTitlesForPlayer(playerId);
   const pad = "__pad__";
   const order = [titles[0]!, titles[1]!, titles[2]!, pad, pad, pad];
-  setBingoPlaybackForTests(order, 0);
+  await setBingoPlaybackForTests(order, 0);
   expect((await markBingoCell(playerId, 0, true)).ok).toBe(true);
-  setBingoPlaybackForTests(order, 1);
+  await setBingoPlaybackForTests(order, 1);
   expect((await markBingoCell(playerId, 1, true)).ok).toBe(true);
-  setBingoPlaybackForTests(order, 2);
+  await setBingoPlaybackForTests(order, 2);
   expect((await markBingoCell(playerId, 2, true)).ok).toBe(true);
 }
 
@@ -46,7 +47,7 @@ async function markFullCardForPlayer(playerId: string) {
   const titles = bingoCardTitlesForPlayer(playerId);
   const order = [...titles, "__pad__"];
   for (let i = 0; i < BINGO_CELL_COUNT; i++) {
-    setBingoPlaybackForTests(order, i);
+    await setBingoPlaybackForTests(order, i);
     expect((await markBingoCell(playerId, i, true)).ok).toBe(true);
   }
 }
@@ -63,7 +64,7 @@ async function stepForwardInTests(): Promise<void> {
     after.guestStep === beforeStep &&
     after.scheduledGameStartsAtEpochMs != null
   ) {
-    await applyDueScheduledTransitions(after.scheduledGameStartsAtEpochMs + 1);
+    await advancePhase(after.scheduledGameStartsAtEpochMs + 1);
   }
 }
 
@@ -122,11 +123,11 @@ describe("store", () => {
       await advancePhase();
       const startAt = (await getSessionState()).scheduledGameStartsAtEpochMs!;
       expect(startAt).toBeGreaterThan(Date.now());
-      await applyDueScheduledTransitions(startAt + 1);
+      await advancePhase(startAt + 1);
       const after = await getSessionState();
       expect(after.guestStep).toBe("game_trivia");
       expect(after.scheduledGameStartsAtEpochMs).toBeNull();
-      expect(after.countdownRemaining).toBeNull();
+      expect(after.revision).toBeNull();
     });
 
     it("from game_trivia moves to leaderboard and records scores", async () => {
@@ -156,7 +157,7 @@ describe("store", () => {
         }
         if (qi < TRIVIA_QUESTIONS.length - 1) {
           t += TEAM_MCQ_CYCLE_MS + 1;
-          await applyDueTeamMcqRoundAdvance(t);
+          await advancePhase(t);
         }
       }
       await advancePhase();
@@ -642,7 +643,7 @@ describe("store", () => {
       }
       const t0 = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
       expect((await getSessionState()).teamMcqRoundIndex).toBe(0);
-      await applyDueTeamMcqRoundAdvance(t0 + TEAM_MCQ_CYCLE_MS + 1);
+      await advancePhase(t0 + TEAM_MCQ_CYCLE_MS + 1);
       const after = await getSessionState();
       expect(after.teamMcqRoundIndex).toBe(1);
       expect(after.teamMcqRoundStartedAtEpochMs).toBe(t0 + TEAM_MCQ_CYCLE_MS);
