@@ -237,8 +237,8 @@ async function commitScoresAndVotes(state: SessionState): Promise<void> {
 /** Persists bingo state progress. */
 async function commitBingoProgress(state: SessionState): Promise<void> {
   const bingoMarkOps = Object.entries(state.bingoMarkedByPlayer).flatMap(([pid, markedArr]) =>
-    markedArr.map((marked, ci) => 
-      marked 
+    markedArr.map((marked, ci) =>
+      marked
         ? supabase.from("bingo_marks").upsert({ player_id: pid, cell_index: ci })
         : supabase.from("bingo_marks").delete().match({ player_id: pid, cell_index: ci })
     )
@@ -339,7 +339,7 @@ async function applyDueTeamMcqRoundAdvance(state: SessionState, nowMs: number): 
   if (step !== "game_trivia" && step !== "game_quotes") {
     return false;
   }
-  
+
   if (state.teamMcqRoundStartedAtEpochMs == null) {
     state.teamMcqRoundStartedAtEpochMs = nowMs;
     state.teamMcqRoundIndex = 0;
@@ -351,7 +351,7 @@ async function applyDueTeamMcqRoundAdvance(state: SessionState, nowMs: number): 
     step === "game_trivia"
       ? TRIVIA_QUESTIONS.length
       : getQuoteQuestions().length;
-      
+
   let changed = false;
   while (
     state.teamMcqRoundIndex < total - 1 &&
@@ -375,7 +375,7 @@ async function applyPreconditions(existingState?: SessionState, nowMs: number = 
   const c1 = await applyDueScheduledTransitions(state, nowMs);
   const c2 = await applyDueTeamMcqRoundAdvance(state, nowMs);
   const c3 = await applyDueBingoRoundEnd(state, nowMs);
-  
+
   if (c1 || c2 || c3) {
     await commitState(state);
     notifySessionChanged();
@@ -422,7 +422,7 @@ async function applyTransitionSideEffects(state: SessionState, from: GuestStep, 
   if (to === "game_trivia") {
     state.triviaVotesByPlayer = {};
     state.teamMcqRoundIndex = 0;
-    state.teamMcqRoundStartedAtEpochMs = Date.now();
+    state.teamMcqRoundStartedAtEpochMs = null;
   }
 
   if (to === "game_quotes") {
@@ -524,6 +524,24 @@ function currentBingoSongTitle(state: SessionState): string | null {
   return order[i] ?? null;
 }
 
+export function buildTeamLeaderboardEntries(
+  teams: Team[],
+  scores: Record<string, number>
+): { name: string; score: number }[] {
+  return sortLeaderboardEntries(
+    teams.map((t) => {
+      const teamScore = t.playerIds.reduce(
+        (acc, pid) => acc + (scores[pid] ?? 0),
+        0
+      );
+      return {
+        name: t.name,
+        score: teamScore,
+      };
+    })
+  );
+}
+
 function getLeaderboardForGameSlot(state: SessionState, slot: number): { name: string; score: number }[] {
   const game = GAMES[slot] ?? null;
   if (!game) return [];
@@ -534,12 +552,7 @@ function getLeaderboardForGameSlot(state: SessionState, slot: number): { name: s
       state.players.map((p) => ({ name: p.nickname, score: scores[p.id] ?? 0 }))
     );
   }
-  return sortLeaderboardEntries(
-    state.teams.map((t) => ({
-      name: t.name,
-      score: t.playerIds.length ? (scores[t.playerIds[0]] ?? 0) : 0,
-    }))
-  );
+  return buildTeamLeaderboardEntries(state.teams, scores);
 }
 
 function getFinalLeaderboard(state: SessionState): { nickname: string; totalScore: number }[] {
@@ -587,14 +600,14 @@ export async function claimBingo(playerId: string, lineKeys: string[]): Promise<
   const prev = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
   const lineDelta = validNewLines.reduce((sum, k) => sum + bingoPointsForValidLineKey(k), 0);
   const delta = lineDelta + (fullNew ? BINGO_POINTS_FULL_CARD : 0);
-  
+
   if (!state.gameScores[BINGO_GAME_ID]) state.gameScores[BINGO_GAME_ID] = {};
   state.gameScores[BINGO_GAME_ID][playerId] = prev + delta;
   state.bingoClaimedLineKeysByPlayer[playerId] = [...priorClaimed, ...validNewLines, ...(fullNew ? [BINGO_FULL_CARD_CLAIM_KEY] : [])];
   state.revision += 1;
   await commitState(state);
   notifySessionChanged();
-  
+
   const finalScore = state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0;
   const finalClaims = state.bingoClaimedLineKeysByPlayer[playerId] ?? [];
   return {
@@ -679,10 +692,10 @@ export async function submitTriviaVote(playerId: string, questionId: string, opt
   if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
   if (!TRIVIA_QUESTION_IDS.has(questionId)) return { ok: false, error: "bad_question" };
   if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
-  
+
   const activeId = activeTeamMcqQuestionId(state);
   if (questionId !== activeId) return { ok: false, error: "wrong_question" };
-  
+
   const prev = state.triviaVotesByPlayer[playerId] ?? {};
   state.triviaVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
   state.revision += 1;
@@ -700,7 +713,7 @@ export async function submitQuoteVote(playerId: string, questionId: string, opti
   if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
   if (!quoteQuestionIds().has(questionId)) return { ok: false, error: "bad_question" };
   if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
-  
+
   const activeId = activeTeamMcqQuestionId(state);
   if (questionId !== activeId) return { ok: false, error: "wrong_question" };
 
@@ -730,7 +743,7 @@ export async function registerPlayer(nickname: string): Promise<string> {
 
   // Persist to database (Relational mapping)
   await supabase.from("players").insert({ id, nickname });
-  
+
   if (teamId) {
     await supabase.from("team_membership").insert({ team_id: teamId, player_id: id });
   }
@@ -831,8 +844,11 @@ function isLobbyStep(step: GuestStep) {
 }
 
 export async function advancePhase(nowMs: number = Date.now()): Promise<void> {
-  let state = await applyPreconditions(undefined, nowMs);
+  const initialState = await getStoreState();
+  const startStep = initialState.guestStep;
+  let state = await applyPreconditions(initialState, nowMs);
   const from = state.guestStep;
+  if (from !== startStep) return;
 
   if (LOBBY_STEPS_WITH_SCHEDULE.has(from) && state.scheduledGameStartsAtEpochMs != null) return;
 

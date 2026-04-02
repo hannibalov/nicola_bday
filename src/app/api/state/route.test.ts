@@ -4,12 +4,11 @@
 import { GET } from "./route";
 import { resetSession, registerPlayer } from "@/lib/store";
 import { NICOLA_PLAYER_ID_HEADER } from "@/lib/requestPlayer";
-
-// Mock Supabase
-jest.mock("@/lib/supabase");
+import { resetTestTables } from "@/lib/supabase";
 
 jest.setTimeout(30000);
 jest.setTimeout(30000); beforeEach(async () => {
+  resetTestTables();
   await resetSession();
 });
 

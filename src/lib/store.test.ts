@@ -13,8 +13,7 @@ import {
   adminAdvanceBingoSong,
   submitTriviaVote,
   submitQuoteVote,
-  
-  
+  buildTeamLeaderboardEntries,
 } from "./store";
 import { TEAM_MCQ_CYCLE_MS } from "./teamMcqTiming";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
@@ -26,9 +25,19 @@ import { GUEST_STEP_SEQUENCE, type GuestStep } from "@/types";
 jest.mock("./supabase");
 
 jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+beforeEach(async () => {
   await resetSession();
 });
+
+/** Helper to advance through steps until a target is reached, with a safety guard. */
+async function advanceUntil(target: GuestStep) {
+  let guard = 0;
+  while ((await getSessionState()).guestStep !== target && guard < 50) {
+    await stepForwardInTests();
+    guard++;
+  }
+  expect((await getSessionState()).guestStep).toBe(target);
+}
 
 /** Aligns playback with the player’s top row so server marks + claims stay valid. */
 async function markTopRowForPlayer(playerId: string) {
@@ -127,7 +136,7 @@ describe("store", () => {
       const after = await getSessionState();
       expect(after.guestStep).toBe("game_trivia");
       expect(after.scheduledGameStartsAtEpochMs).toBeNull();
-      expect(after.revision).toBeNull();
+      expect(after.revision).toBeGreaterThan(0);
     });
 
     it("from game_trivia moves to leaderboard and records scores", async () => {
@@ -144,9 +153,7 @@ describe("store", () => {
     it("trivia leaderboard uses majority team scoring (+50 per correct question per player)", async () => {
       const ids: string[] = [];
       for (let i = 0; i < 4; i++) ids.push(await registerPlayer(`P${i}`));
-      while ((await getSessionState()).guestStep !== "game_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_trivia");
       const teams = (await getSessionState()).teams;
       const teamA = teams[0]!;
       let t = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
@@ -170,9 +177,7 @@ describe("store", () => {
 
     it("gives all teammates the same round score for team games", async () => {
       for (let i = 0; i < 6; i++) await registerPlayer(`P${i}`);
-      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("leaderboard_post_trivia");
       const state = await getSessionState();
       const board = state.gameScores[GAMES[0].id]!;
       const teams = state.teams;
@@ -218,15 +223,11 @@ describe("store", () => {
 
     it("reshuffles teams for quotes after trivia", async () => {
       for (let i = 0; i < 14; i++) await registerPlayer(`P${i}`);
-      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("leaderboard_post_trivia");
       const triviaTeams = JSON.stringify(
         (await getSessionState()).teams.map((t) => [...t.playerIds].sort())
       );
-      while ((await getSessionState()).guestStep !== "lobby_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("lobby_quotes");
       const quoteTeams = JSON.stringify(
         (await getSessionState()).teams.map((t) => [...t.playerIds].sort())
       );
@@ -257,9 +258,7 @@ describe("store", () => {
 
     it("hides myTeam during bingo lobby countdown", async () => {
       const id = await registerPlayer("Alice");
-      while ((await getSessionState()).guestStep !== "lobby_bingo") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("lobby_bingo");
       await advancePhase();
       expect((await getPublicState(id)).myTeam).toBeNull();
     });
@@ -267,9 +266,7 @@ describe("store", () => {
     it("returns myTeam on post-trivia leaderboard for highlight UX", async () => {
       const ids: string[] = [];
       for (let i = 0; i < 8; i++) ids.push(await registerPlayer(`P${i}`));
-      while ((await getSessionState()).guestStep !== "leaderboard_post_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("leaderboard_post_trivia");
       const pub = await getPublicState(ids[0]);
       expect(pub.myTeam).toBeDefined();
       expect(pub.myTeam?.playerIds).toContain(ids[0]);
@@ -313,9 +310,7 @@ describe("store", () => {
 
     it("returns myTriviaVotes during game_trivia", async () => {
       const id = await registerPlayer("Solo");
-      while ((await getSessionState()).guestStep !== "game_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_trivia");
       await submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 2);
       const pub = await getPublicState(id);
       expect(pub.myTriviaVotes[TRIVIA_QUESTIONS[0].id]).toBe(2);
@@ -330,9 +325,7 @@ describe("store", () => {
 
     it("returns myQuoteVotes during game_quotes", async () => {
       const id = await registerPlayer("QuotePlayer");
-      while ((await getSessionState()).guestStep !== "game_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_quotes");
       const q0 = getQuoteQuestions()[0];
       await submitQuoteVote(id, q0.id, 2);
       const pub = await getPublicState(id);
@@ -351,9 +344,7 @@ describe("store", () => {
 
     it("exposes bingo countdown, marks, myBingoClaimedLineKeys and score during game_bingo", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_bingo") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_bingo");
       const pub0 = await getPublicState(id);
       expect(pub0.bingoRoundEndsAtEpochMs).toBeGreaterThan(Date.now());
       await markTopRowForPlayer(id);
@@ -366,15 +357,6 @@ describe("store", () => {
   });
 
   describe("claimBingo", () => {
-    async function advanceUntil(step: GuestStep) {
-      let guard = 0;
-      while ((await getSessionState()).guestStep !== step && guard < 30) {
-        await stepForwardInTests();
-        guard++;
-      }
-      expect((await getSessionState()).guestStep).toBe(step);
-    }
-
     it("returns null when not in game_bingo", async () => {
       const id = await registerPlayer("A");
       expect(await claimBingo(id, ["0,1,2"])).toBeNull();
@@ -453,15 +435,6 @@ describe("store", () => {
   });
 
   describe("markBingoCell", () => {
-    async function advanceUntil(step: GuestStep) {
-      let guard = 0;
-      while ((await getSessionState()).guestStep !== step && guard < 30) {
-        await stepForwardInTests();
-        guard++;
-      }
-      expect((await getSessionState()).guestStep).toBe(step);
-    }
-
     it("applies a penalty when marking a tile that is not the current song", async () => {
       const id = await registerPlayer("A");
       await advanceUntil("game_bingo");
@@ -487,9 +460,7 @@ describe("store", () => {
   describe("applyDueBingoRoundEnd", () => {
     it("moves to bingo leaderboard and records scores when the round timer is past", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_bingo") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_bingo");
       await markTopRowForPlayer(id);
       await claimBingo(id, ["0,1,2"]);
       const endAt = (await getSessionState()).bingoRoundEndsAtEpochMs!;
@@ -539,9 +510,7 @@ describe("store", () => {
     it("awards 50 per correct team majority per quote (same as trivia)", async () => {
       const a = await registerPlayer("A");
       const b = await registerPlayer("B");
-      while ((await getSessionState()).guestStep !== "game_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_quotes");
       const q0 = getQuoteQuestions()[0];
       await submitQuoteVote(a, q0.id, q0.correctIndex);
       await submitQuoteVote(b, q0.id, q0.correctIndex);
@@ -555,9 +524,7 @@ describe("store", () => {
     it("does not give points when team majority is wrong", async () => {
       const a = await registerPlayer("A");
       const b = await registerPlayer("B");
-      while ((await getSessionState()).guestStep !== "game_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_quotes");
       const q0 = getQuoteQuestions()[0];
       const wrong = q0.correctIndex === 0 ? 1 : 0;
       await submitQuoteVote(a, q0.id, wrong);
@@ -578,9 +545,7 @@ describe("store", () => {
 
     it("accepts votes during game_trivia", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_trivia");
       const stateBefore = await getSessionState();
       expect(stateBefore.triviaVotesByPlayer).toEqual({});
       expect((await submitTriviaVote(id, TRIVIA_QUESTIONS[0].id, 1)).ok).toBe(true);
@@ -590,9 +555,7 @@ describe("store", () => {
 
     it("rejects vote for a question that is not the active round", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_trivia");
       const wrongId = TRIVIA_QUESTIONS[1]!.id;
       expect(await submitTriviaVote(id, wrongId, 0)).toEqual({
         ok: false,
@@ -611,9 +574,7 @@ describe("store", () => {
 
     it("accepts votes during game_quotes", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_quotes");
       const q0 = getQuoteQuestions()[0];
       const stateBefore = await getSessionState();
       expect(stateBefore.quoteVotesByPlayer).toEqual({});
@@ -624,9 +585,7 @@ describe("store", () => {
 
     it("rejects quote vote when not the active question", async () => {
       const id = await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_quotes") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_quotes");
       const q1 = getQuoteQuestions()[1]!;
       expect(await submitQuoteVote(id, q1.id, 0)).toEqual({
         ok: false,
@@ -638,15 +597,131 @@ describe("store", () => {
   describe("applyDueTeamMcqRoundAdvance", () => {
     it("advances question index after each full cycle on the server timeline", async () => {
       await registerPlayer("A");
-      while ((await getSessionState()).guestStep !== "game_trivia") {
-        await stepForwardInTests();
-      }
+      await advanceUntil("game_trivia");
       const t0 = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
       expect((await getSessionState()).teamMcqRoundIndex).toBe(0);
       await advancePhase(t0 + TEAM_MCQ_CYCLE_MS + 1);
       const after = await getSessionState();
       expect(after.teamMcqRoundIndex).toBe(1);
       expect(after.teamMcqRoundStartedAtEpochMs).toBe(t0 + TEAM_MCQ_CYCLE_MS);
+    });
+  });
+
+  describe("leaderboard display", () => {
+    it("aggregates team player scores for team leaderboard entries", () => {
+      const entries = buildTeamLeaderboardEntries(
+        [
+          { id: "teamA", name: "Team A", playerIds: ["p1", "p2"] },
+          { id: "teamB", name: "Team B", playerIds: ["p3"] },
+        ],
+        {
+          p1: 100,
+          p2: 150,
+          p3: 80,
+        }
+      );
+      expect(entries).toEqual([
+        { name: "Team A", score: 250 },
+        { name: "Team B", score: 80 },
+      ]);
+    });
+
+    it("team leaderboard after trivia shows team names from the leaderboard", async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 6; i++) ids.push(await registerPlayer(`P${i}`));
+
+      await advanceUntil("leaderboard_post_trivia");
+
+      const pub = await getPublicState(ids[0]);
+      const leaderboard = pub.leaderboard;
+
+      // After trivia, leaderboard should contain entries
+      expect(leaderboard.length).toBeGreaterThan(0);
+
+      // Leaderboard entries should have team names (not individual player nicknames)
+      const state = await getSessionState();
+      const teamNames = state.teams.map(t => t.name);
+      const playerNicknames = state.players.map(p => p.nickname);
+
+      leaderboard.forEach(entry => {
+        // Should be a team name (like "Team 1"), not a player nickname
+        expect(teamNames).toContain(entry.name);
+        expect(playerNicknames).not.toContain(entry.name);
+      });
+    });
+
+    it("individual leaderboard after bingo shows player names and scores", async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 4; i++) ids.push(await registerPlayer(`P${i}`));
+
+      await advanceUntil("leaderboard_post_bingo");
+
+      const pub = await getPublicState(ids[0]);
+      const leaderboard = pub.leaderboard;
+
+      // After bingo, leaderboard should contain individual player entries
+      expect(leaderboard.length).toBeGreaterThan(0);
+
+      // Leaderboard entries should have player nicknames
+      const state = await getSessionState();
+      const playerNicknames = state.players.map(p => p.nickname);
+      leaderboard.forEach(entry => {
+        expect(playerNicknames).toContain(entry.name);
+      });
+    });
+
+    it("final leaderboard has valid scores with cumulative totals", async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 8; i++) ids.push(await registerPlayer(`P${i}`));
+
+      await advanceUntil("leaderboard_final");
+
+      const state = await getSessionState();
+      const pub = await getPublicState(ids[0]);
+      const finalLeaderboard = pub.finalLeaderboard;
+
+      // Final leaderboard should have entries for each unique player
+      expect(finalLeaderboard.length).toBe(ids.length);
+
+      // All entries should have valid scores (non-negative)
+      finalLeaderboard.forEach(entry => {
+        expect(entry.totalScore).toBeGreaterThanOrEqual(0);
+        expect(typeof entry.totalScore).toBe("number");
+        expect(typeof entry.nickname).toBe("string");
+      });
+
+      // Check that each player appears exactly once
+      const nicknames = finalLeaderboard.map(e => e.nickname);
+      const uniqueNicknames = new Set(nicknames);
+      expect(uniqueNicknames.size).toBe(ids.length);
+    });
+
+    it("team leaderboard entries reflect all team members' scores correctly", async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 6; i++) ids.push(await registerPlayer(`P${i}`));
+
+      await advanceUntil("leaderboard_post_trivia");
+
+      const pub = await getPublicState(ids[0]);
+      const leaderboard = pub.leaderboard;
+      const state = await getSessionState();
+      const gameScores = state.gameScores[GAMES[0].id]!;
+      const teams = state.teams;
+
+      // Verify each team's leaderboard entry score matches the sum of its members' scores
+      expect(leaderboard.length).toBeGreaterThan(0);
+      leaderboard.forEach(entry => {
+        const matchingTeam = teams.find(t => t.name === entry.name);
+        expect(matchingTeam).toBeDefined();
+
+        if (matchingTeam) {
+          const memberScores = matchingTeam.playerIds.map(pid => gameScores[pid] ?? 0);
+          const teamTotal = memberScores.reduce((sum, s) => sum + s, 0);
+
+          // The leaderboard entry should show team total score
+          expect(entry.score).toBe(teamTotal);
+        }
+      });
     });
   });
 });

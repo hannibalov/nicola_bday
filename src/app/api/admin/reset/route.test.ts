@@ -8,6 +8,7 @@ import {
   registerPlayer,
   resetSession,
 } from "@/lib/store";
+import { resetTestTables } from "@/lib/supabase";
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "admin-secret";
 
@@ -15,11 +16,9 @@ jest.mock("next/headers", () => ({
   headers: jest.fn(() => Promise.resolve({ get: () => null })),
 }));
 
-// Mock Supabase
-jest.mock("@/lib/supabase");
-
 jest.setTimeout(30000);
 jest.setTimeout(30000); beforeEach(async () => {
+  resetTestTables();
   await resetSession();
 });
 

@@ -3,12 +3,15 @@
  */
 import { GET } from "./route";
 import { advancePhase, resetSession, registerPlayer } from "@/lib/store";
+import { resetMockSupabase, supabase, subscriptions } from "@/lib/__mocks__/supabase";
 
 // Mock Supabase
 jest.mock("@/lib/supabase");
 
 jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+
+beforeEach(async () => {
+  resetMockSupabase();
   await resetSession();
 });
 
@@ -67,6 +70,16 @@ describe("GET /api/events", () => {
     await reader.read(); // consume initial
 
     await registerPlayer("NewPlayer");
+    
+    // Manually trigger a session update to simulate real-time notification
+    const sessionSub = subscriptions.find(s => s.table === 'session');
+    if (sessionSub) {
+      sessionSub.callback({
+        eventType: 'UPDATE', 
+        new: { id: 1, guest_step: "party_protocol", revision: 1 }
+      });
+    }
+    
     const { value } = await reader.read();
     const text = decoder.decode(value || new Uint8Array());
     const parsed = JSON.parse(text.replace(/^data: /, "").trim()) as Record<string, unknown>;

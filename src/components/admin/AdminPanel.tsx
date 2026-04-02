@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { GuestStep, SessionState } from "@/types";
 import { gameSlotFromGuestStep, getNextGuestStep } from "@/types";
 import { guestStepLabel, nextGuestStepLabel } from "@/lib/guestStepLabels";
+import { createAdaptivePoller } from "@/lib/adaptivePolling";
 import {
   shouldAdminPanelUseEventSource,
   parseSsePayload,
@@ -83,11 +84,12 @@ export default function AdminPanel() {
     if (!committedKey.trim()) return;
     fetchState();
     let es: EventSource | null = null;
-    let poll: ReturnType<typeof setInterval> | null = null;
+    let poller: ReturnType<typeof createAdaptivePoller> | null = null;
     const useSse = shouldAdminPanelUseEventSource();
 
     if (!useSse) {
-      poll = setInterval(fetchState, 2000);
+      poller = createAdaptivePoller(fetchState, 4000, 30000);
+      poller.start();
     } else {
       try {
         es = new EventSource("/api/events");
@@ -136,18 +138,20 @@ export default function AdminPanel() {
         es.onerror = () => {
           es?.close();
           es = null;
-          // Fall back to polling; do NOT try to reopen SSE to avoid loops.
-          if (poll == null) {
-            poll = setInterval(fetchState, 2000);
+          // Fall back to adaptive polling; do NOT try to reopen SSE to avoid loops.
+          if (poller == null) {
+            poller = createAdaptivePoller(fetchState, 4000, 30000);
+            poller.start();
           }
         };
       } catch {
-        poll = setInterval(fetchState, 2000);
+        poller = createAdaptivePoller(fetchState, 4000, 30000);
+        poller.start();
       }
     }
     return () => {
       es?.close();
-      if (poll != null) clearInterval(poll);
+      poller?.stop();
     };
   }, [committedKey, fetchState]);
 

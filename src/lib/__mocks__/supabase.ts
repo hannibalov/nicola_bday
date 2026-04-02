@@ -16,6 +16,16 @@ let stores: TableStore = {
 // Global operation queue to prevent race conditions during concurrent Promise.all()
 const tableQueues: Record<string, Promise<void>> = {};
 
+// Store subscription callbacks for real-time notifications
+const subscriptions: Array<{
+  table: string;
+  event: string;
+  filter: string;
+  callback: (payload: any) => void;
+}> = [];
+
+export { subscriptions };
+
 const createMockBuilder = (table: string) => {
   let filterGroups: Array<{col: string, val: any, type: 'eq'|'neq'|'in'|'match'}> = [];
   let operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
@@ -76,6 +86,17 @@ const createMockBuilder = (table: string) => {
             });
             stores[table] = newStore;
             result.data = rows;
+
+            // Trigger real-time subscriptions for updates
+            if (table === 'session') {
+              subscriptions.forEach(sub => {
+                if (sub.table === table && (sub.event === '*' || sub.event === 'UPDATE' || sub.event === 'postgres_changes')) {
+                  rows.forEach(row => {
+                    sub.callback({ eventType: 'UPDATE', new: row, old: null });
+                  });
+                }
+              });
+            }
           } else if (operation === 'update') {
             const matchedFingerprints = new Set(matchedRows.map(m => JSON.stringify(m)));
             stores[table] = tableStore.map(r => {
@@ -109,12 +130,42 @@ const createMockBuilder = (table: string) => {
   return builder;
 };
 
+const createMockChannel = (channelName: string) => {
+  let onCallback: ((payload: any) => void) | null = null;
+
+  return {
+    on: jest.fn().mockImplementation((event: string, filter: any, callback: (payload: any) => void) => {
+      // Extract table from filter if available, otherwise from channel name
+      const tableName = filter?.table || channelName.split(':')[0];
+      subscriptions.push({
+        table: tableName,
+        event,
+        filter,
+        callback
+      });
+      onCallback = callback;
+      return createMockChannel(channelName);
+    }),
+    subscribe: jest.fn(() => {
+      // Simulate immediate subscription success
+      return Promise.resolve();
+    }),
+    unsubscribe: jest.fn(() => {
+      // Remove subscriptions for this channel
+      const table = channelName.split(':')[0];
+      const idx = subscriptions.findIndex(s => s.table === table);
+      if (idx >= 0) subscriptions.splice(idx, 1);
+    }),
+    // Helper method to manually trigger callbacks for testing
+    trigger: (payload: any) => {
+      if (onCallback) onCallback(payload);
+    }
+  };
+};
+
 export const supabase = {
   from: jest.fn((table: string) => createMockBuilder(table)),
-  channel: jest.fn(() => ({
-    on: jest.fn().mockReturnThis(),
-    subscribe: jest.fn().mockReturnThis(),
-  })),
+  channel: jest.fn((name: string) => createMockChannel(name)),
   removeChannel: jest.fn(),
 };
 
@@ -129,6 +180,7 @@ export function resetMockSupabase() {
     bingo_marks: [],
     bingo_claims: [],
   };
+  subscriptions.length = 0;
   Object.keys(tableQueues).forEach(k => delete tableQueues[k]);
 }
 

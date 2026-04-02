@@ -11,10 +11,30 @@ import {
   markBingoCell,
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
+import { resetTestTables } from "@/lib/supabase";
+
+const mockCookies: Record<string, string> = {};
+
+jest.mock("next/server", () => ({
+  NextResponse: {
+    json: (data: any, options?: any) => ({
+      status: options?.status || 200,
+      json: async () => data,
+    }),
+  },
+}));
+
+jest.mock("next/headers", () => ({
+  cookies: jest.fn(() => Promise.resolve({
+    get: (name: string) => mockCookies[name] ? { value: mockCookies[name] } : undefined
+  })),
+}));
 
 jest.setTimeout(30000);
 jest.setTimeout(30000); beforeEach(async () => {
+  resetTestTables();
   await resetSession();
+  Object.keys(mockCookies).forEach(k => delete mockCookies[k]);
 });
 
 function authJsonHeaders(playerId: string): HeadersInit {
@@ -40,25 +60,28 @@ async function advanceUntilGameBingo() {
 describe("POST /api/game/bingo/claim", () => {
   jest.setTimeout(30000);
   it("returns 401 without playerId cookie", async () => {
-    const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
-      })
-    );
+    const res = await POST({
+      url: "http://localhost/api/game/bingo/claim",
+      method: "POST",
+      json: async () => ({ lineKeys: ["0,1,2"] }),
+      headers: {
+        get: (name: string) => undefined,
+      },
+    } as any);
     expect(res.status).toBe(401);
   });
 
   it("returns 400 when not in game_bingo", async () => {
     const id = await registerPlayer("A");
-    const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
-        method: "POST",
-        headers: authJsonHeaders(id),
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
-      })
-    );
+    mockCookies.playerId = id;
+    const res = await POST({
+      url: "http://localhost/api/game/bingo/claim",
+      method: "POST",
+      json: async () => ({ lineKeys: ["0,1,2"] }),
+      headers: {
+        get: (name: string) => name === "cookie" ? `playerId=${encodeURIComponent(id)}` : undefined,
+      },
+    } as any);
     expect(res.status).toBe(400);
   });
 
@@ -74,14 +97,16 @@ describe("POST /api/game/bingo/claim", () => {
     await markBingoCell(id, 1, true);
     await setBingoPlaybackForTests(order, 2);
     await markBingoCell(id, 2, true);
+    mockCookies.playerId = id;
 
-    const res = await POST(
-      new Request("http://localhost/api/game/bingo/claim", {
-        method: "POST",
-        headers: authJsonHeaders(id),
-        body: JSON.stringify({ lineKeys: ["0,1,2"] }),
-      })
-    );
+    const res = await POST({
+      url: "http://localhost/api/game/bingo/claim",
+      method: "POST",
+      json: async () => ({ lineKeys: ["0,1,2"] }),
+      headers: {
+        get: (name: string) => name === "cookie" ? `playerId=${encodeURIComponent(id)}` : undefined,
+      },
+    } as any);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.awarded).toBe(100);

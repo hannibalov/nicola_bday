@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { formatSseData } from "@/lib/sseFormat";
+import { getSessionState } from "@/lib/store";
 import type { SessionState } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -17,12 +18,13 @@ export async function GET() {
         .single();
       
       if (initial) {
+        const state = await getSessionState();
         controller.enqueue(
           encoder.encode(
             formatSseData({
               revision: initial.revision,
               guestStep: initial.guest_step,
-              playerCount: 0, // Placeholder; client will refetch full state
+              playerCount: state.players.length,
             })
           )
         );
@@ -34,21 +36,22 @@ export async function GET() {
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "session", filter: "id=eq.1" },
-          (payload) => {
+          async (payload) => {
             const newData = payload.new as any;
             if (!newData) return;
             try {
+              const state = await getSessionState();
               controller.enqueue(
                 encoder.encode(
                   formatSseData({
                     revision: newData.revision,
                     guestStep: newData.guest_step,
-                    playerCount: 0, // Placeholder
+                    playerCount: state.players.length,
                   })
                 )
               );
-            } catch {
-              // stream closed
+            } catch (err) {
+              // Handle error
             }
           }
         )

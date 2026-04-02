@@ -24,9 +24,29 @@ import { TEAM_MCQ_CYCLE_MS } from "@/lib/teamMcqTiming";
 import { getQuoteQuestions } from "@/lib/quoteContent";
 import { GAMES } from "@/lib/gameConfig";
 import type { PublicState } from "@/types";
+import { resetTestTables } from "@/lib/supabase";
 
-// Mock Supabase
-jest.mock("@/lib/supabase");
+process.env.NICOLA_E2E_FAST_LOBBY = "1";
+
+jest.mock("next/server", () => ({
+  NextResponse: {
+    json: (data: any, options?: any) => {
+      const headers = new Map();
+      const cookies = {
+        set: (name: string, value: string, options?: any) => {
+          const header = `${name}=${encodeURIComponent(value)}${options?.maxAge ? `; Max-Age=${options.maxAge}` : ''}${options?.httpOnly ? '; HttpOnly' : ''}${options?.secure ? '; Secure' : ''}${options?.sameSite ? `; SameSite=${options.sameSite}` : ''}`;
+          headers.set('set-cookie', header);
+        },
+      };
+      return {
+        status: options?.status || 200,
+        json: async () => data,
+        headers,
+        cookies,
+      };
+    },
+  },
+}));
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "admin-secret";
 
@@ -50,24 +70,25 @@ function postJsonWithPlayerCookie(
   path: string,
   playerId: string,
   body: unknown,
-): Request {
-  return new Request(`http://localhost${path}`, {
+): any {
+  return {
+    url: `http://localhost${path}`,
     method: "POST",
+    json: async () => body,
     headers: {
-      "Content-Type": "application/json",
-      Cookie: `playerId=${encodeURIComponent(playerId)}`,
+      get: (name: string) => {
+        if (name === "cookie") return `playerId=${encodeURIComponent(playerId)}`;
+        return undefined;
+      }
     },
-    body: JSON.stringify(body),
-  });
+  };
 }
 
 async function registerViaApi(nickname: string): Promise<string> {
   const res = await postPlayers(
-    new Request("http://localhost/api/players", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nickname }),
-    })
+    {
+      json: async () => ({ nickname }),
+    } as any
   );
   expect(res.status).toBe(200);
   const data = (await res.json()) as { playerId: string };
@@ -78,11 +99,12 @@ async function registerViaApi(nickname: string): Promise<string> {
 async function readPublicState(): Promise<PublicState> {
   const pid = mockCookies.get("playerId");
   const res = await getState(
-    new Request("http://localhost/api/state", {
+    {
+      url: "http://localhost/api/state",
       headers: pid
-        ? { Cookie: `playerId=${encodeURIComponent(pid)}` }
-        : {},
-    }),
+        ? { get: (name: string) => name === "cookie" ? `playerId=${encodeURIComponent(pid)}` : undefined }
+        : { get: () => undefined },
+    } as any
   );
   expect(res.status).toBe(200);
   return (await res.json()) as PublicState;
@@ -90,17 +112,17 @@ async function readPublicState(): Promise<PublicState> {
 
 async function adminStartNext(): Promise<void> {
   const res = await postAdminStartNext(
-    new Request(
-      `http://localhost/api/admin/start-next?key=${encodeURIComponent(ADMIN_SECRET)}`,
-      { method: "POST" }
-    )
+    {
+      url: `http://localhost/api/admin/start-next?key=${encodeURIComponent(ADMIN_SECRET)}`,
+      method: "POST",
+    } as any
   );
   expect(res.status).toBe(200);
 }
 
 async function advanceGuestStepUntil(target: GuestStep) {
   let guard = 0;
-  let now = Date.now();
+  let now = 1000000000000; // fixed time to avoid real time issues
   while (guard < 50) {
     const s = await getSessionState(now);
     if (s.guestStep === target) break;
@@ -114,10 +136,11 @@ async function advanceGuestStepUntil(target: GuestStep) {
     }
     guard++;
   }
-  expect((await getSessionState()).guestStep).toBe(target);
+  expect((await getSessionState(now)).guestStep).toBe(target);
 }
 
 beforeEach(async () => {
+  resetTestTables();
   await resetSession();
   mockCookies.clear();
 });
@@ -141,9 +164,9 @@ describe("session flow integration (HTTP + store)", () => {
   it("admin state reflects players and advances in sync with public state", async () => {
     await registerViaApi("HostCheck");
     const adminBefore = await getAdminState(
-      new Request(
-        `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`
-      )
+      {
+        url: `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`,
+      } as any
     );
     expect(adminBefore.status).toBe(200);
     const sessionBefore = (await adminBefore.json()) as { players: { nickname: string }[] };
@@ -160,8 +183,9 @@ describe("session flow integration (HTTP + store)", () => {
     const id = await registerViaApi("SoloTrivia");
     await advanceGuestStepUntil("game_trivia");
 
+    const state = await getSessionState();
+    const q = TRIVIA_QUESTIONS[state.teamMcqRoundIndex];
     setPlayerCookie(id);
-    const q = TRIVIA_QUESTIONS[0];
     const voteRes = await postTriviaVote(
       postJsonWithPlayerCookie("/api/game/trivia/vote", id, {
         questionId: q.id,
@@ -233,18 +257,19 @@ describe("session flow integration (HTTP + store)", () => {
   it("quotes: vote via API then final leaderboard exposes totals", async () => {
     const id = await registerViaApi("QuoteUser");
     await advanceGuestStepUntil("game_quotes");
-    const q0 = getQuoteQuestions()[0];
+    const state = await getSessionState();
+    const q = getQuoteQuestions()[state.teamMcqRoundIndex];
 
     setPlayerCookie(id);
     const voteRes = await postQuoteVote(
       postJsonWithPlayerCookie("/api/game/quotes/vote", id, {
-        questionId: q0.id,
-        optionIndex: q0.correctIndex,
+        questionId: q.id,
+        optionIndex: q.correctIndex,
       }),
     );
     expect(voteRes.status).toBe(200);
     const pubVotes = await readPublicState();
-    expect(pubVotes.myQuoteVotes[q0.id]).toBe(q0.correctIndex);
+    expect(pubVotes.myQuoteVotes[q.id]).toBe(q.correctIndex);
 
     await adminStartNext();
     const fin = await readPublicState();
@@ -260,10 +285,10 @@ describe("session flow integration (HTTP + store)", () => {
     expect(pub.playerCount).toBe(1);
 
     const resetRes = await postAdminReset(
-      new Request(
-        `http://localhost/api/admin/reset?key=${encodeURIComponent(ADMIN_SECRET)}`,
-        { method: "POST" }
-      )
+      {
+        url: `http://localhost/api/admin/reset?key=${encodeURIComponent(ADMIN_SECRET)}`,
+        method: "POST",
+      } as any
     );
     expect(resetRes.status).toBe(200);
 
@@ -283,10 +308,10 @@ describe("session flow integration (HTTP + store)", () => {
     await registerViaApi("Gone");
     await adminStartNext();
     const resetRes = await postAdminReset(
-      new Request(
-        `http://localhost/api/admin/reset?key=${encodeURIComponent(ADMIN_SECRET)}`,
-        { method: "POST" }
-      )
+      {
+        url: `http://localhost/api/admin/reset?key=${encodeURIComponent(ADMIN_SECRET)}`,
+        method: "POST",
+      } as any
     );
     expect(resetRes.status).toBe(200);
 
@@ -296,9 +321,9 @@ describe("session flow integration (HTTP + store)", () => {
     expect(pub.guestStep).toBe("party_protocol");
 
     const adminRes = await getAdminState(
-      new Request(
-        `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`
-      )
+      {
+        url: `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`,
+      } as any
     );
     expect(adminRes.status).toBe(200);
     const session = (await adminRes.json()) as { players: unknown[] };
@@ -307,7 +332,10 @@ describe("session flow integration (HTTP + store)", () => {
 
   it("rejects admin reset with bad key", async () => {
     const res = await postAdminReset(
-      new Request("http://localhost/api/admin/reset?key=wrong", { method: "POST" })
+      {
+        url: "http://localhost/api/admin/reset?key=wrong",
+        method: "POST",
+      } as any
     );
     expect(res.status).toBe(401);
   });
@@ -315,10 +343,10 @@ describe("session flow integration (HTTP + store)", () => {
   it("trivia scoring integration: team all-correct matches store round scores", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) {
-       ids.push(await registerViaApi(`TeamP${i}`));
+      ids.push(await registerViaApi(`TeamP${i}`));
     }
     await advanceGuestStepUntil("game_trivia");
-    
+
     const state = await getSessionState();
     const teamA = state.teams[0]!;
     let t = state.teamMcqRoundStartedAtEpochMs!;

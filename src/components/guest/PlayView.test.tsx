@@ -192,9 +192,9 @@ describe("PlayView", () => {
     render(<PlayView />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    // Wait for the poll
+    // Wait for the poll (increased to 4s interval from 2s)
     act(() => {
-      jest.advanceTimersByTime(2001);
+      jest.advanceTimersByTime(4001);
     });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
