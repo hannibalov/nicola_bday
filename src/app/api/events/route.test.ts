@@ -3,7 +3,7 @@
  */
 import { GET } from "./route";
 import { advancePhase, resetSession, registerPlayer } from "@/lib/store";
-import { resetMockSupabase, supabase, subscriptions } from "@/lib/__mocks__/supabase";
+import { resetMockSupabase, subscriptions } from "@/lib/__mocks__/supabase";
 
 // Mock Supabase
 jest.mock("@/lib/supabase");
@@ -17,13 +17,13 @@ beforeEach(async () => {
 
 describe("GET /api/events", () => {
   it("returns text/event-stream", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/events"));
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
   });
 
   it("stream yields initial session payload with guestStep and revision", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/events"));
     const reader = res.body?.getReader();
     expect(reader).toBeDefined();
     const decoder = new TextDecoder();
@@ -39,7 +39,7 @@ describe("GET /api/events", () => {
   it("initial SSE frame includes playerCount", async () => {
     await registerPlayer("Alice");
     await registerPlayer("Bob");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/events"));
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     const { value } = await reader!.read();
@@ -50,7 +50,7 @@ describe("GET /api/events", () => {
   });
 
   it("pushes updated guestStep after session notify", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/events"));
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     await reader.read(); // initial
@@ -64,7 +64,7 @@ describe("GET /api/events", () => {
   }, 10000);
 
   it("SSE frame after player registers includes updated playerCount", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/events"));
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     await reader.read(); // consume initial

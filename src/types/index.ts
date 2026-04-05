@@ -1,12 +1,15 @@
 export type GuestStep =
   | "party_protocol"
   | "lobby_trivia"
+  | "countdown_trivia"
   | "game_trivia"
   | "leaderboard_post_trivia"
   | "lobby_bingo"
+  | "countdown_bingo"
   | "game_bingo"
   | "leaderboard_post_bingo"
   | "lobby_quotes"
+  | "countdown_quotes"
   | "game_quotes"
   | "leaderboard_final";
 
@@ -108,6 +111,8 @@ export interface PublicState {
   lobbyTeams: LobbyTeamRoster[];
   /** Registered players on server (for lobby “how many here”). */
   playerCount: number;
+  players: Player[];
+  teams: Team[];
   /**
    * False when the browser sent a playerId cookie that is not in the current session
    * (e.g. after host reset). Client should clear storage and re-check-in.
@@ -116,6 +121,7 @@ export interface PublicState {
   leaderboard: { name: string; score: number }[];
   finalLeaderboard: { nickname: string; totalScore: number }[];
   games: GameConfig[];
+  gameScores: Record<string, Record<string, number>>;
   /** Monotonic revision for SSE; same as top-level revision when syncing. */
   syncRevision: number;
   /** Set on `game_bingo` for the requesting player — lines already claimed on the server. */

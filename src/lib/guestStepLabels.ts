@@ -4,12 +4,15 @@ import { getNextGuestStep } from "@/types";
 const LABELS: Record<GuestStep, string> = {
   party_protocol: "Party protocol / theme",
   lobby_trivia: "Lobby — Team trivia",
+  countdown_trivia: "Countdown — Team trivia",
   game_trivia: "Game — Team trivia",
   leaderboard_post_trivia: "Leaderboard — After trivia",
   lobby_bingo: "Lobby — Music bingo",
+  countdown_bingo: "Countdown — Music bingo",
   game_bingo: "Game — Music bingo",
   leaderboard_post_bingo: "Leaderboard — After bingo",
   lobby_quotes: "Lobby — Who said it",
+  countdown_quotes: "Countdown — Who said it",
   game_quotes: "Game — Who said it",
   leaderboard_final: "Final leaderboard",
 };

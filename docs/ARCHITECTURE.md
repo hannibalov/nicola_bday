@@ -13,7 +13,7 @@ Mobile-first web app for a birthday party: **no authentication**, **Supabase for
 - **Guest (player):** joins with a quirky nickname, reads party info, waits for the host, then plays games in sequence with updates when the host advances the session.
 - **Admin (host):** opens a protected panel, sees how many players are connected, and advances the **global guest step** so every device stays aligned.
 
-**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **Server-Sent Events (SSE)** push session changes with **polling fallback** if the event stream fails. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
+**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **WebSocket** push session changes with **SSE/polling fallback** if the connection fails. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
 
 ---
 
@@ -77,7 +77,7 @@ Guest screens live under **`src/components/guest/`**, shared chrome under **`src
 
 ## 5. Implementation snapshot (current)
 
-The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, game lobbies, majority-based team scoring, SSE, and localStorage helpers. Server state is persisted in **Supabase** to ensure consistency across multiple serverless instances (eliminating the "unknown player" issue on Vercel).
+The repository implements the **full guest sequence** above: real trivia, music bingo, identify-quote flow, party protocol, game lobbies, majority-based team scoring, WebSocket + fallback, and localStorage helpers. Server state is persisted in **Supabase** to ensure consistency across multiple serverless instances (eliminating the "unknown player" issue on Vercel).
 
 ### 5.1 Routes
 
@@ -85,7 +85,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |-------|---------|
 | `/` | `guest/GuestEntryFlow` → `NicknameForm` — quirky-alias copy; `POST /api/players`; persists `playerId` + nickname via `persistPlayerProfile()`; redirects to `/play`. |
 | `/play` | `guest/PlayPageContent` requires persisted `playerId` (cookie and/or localStorage), then `guest/PlayView`. |
-| `/admin` | `admin/AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); SSE + 2s poll fallback; **Start next** and **Reset session**. |
+| `/admin` | `admin/AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); WebSocket + SSE/poll fallback; **Start next** and **Reset session**. |
 | `/join` | Dev/QA shortcut: redirects to `/?protocolTest=1` (unlocks protocol CTA for testing). |
 
 ### 5.2 API
@@ -94,7 +94,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |---------------|------|
 | `POST /api/players` | Register nickname; response includes `playerId`; **httpOnly `playerId` cookie** set by server. |
 | `GET /api/state` | **`PublicState`** for the current cookie’s player: `guestStep`, revision, game, teams/lobby, leaderboards, vote snapshots; during bingo, `myBingoMarkedCells`, `myBingoClaimedLineKeys`, `myBingoScore`, `bingoRoundEndsAtEpochMs`. |
-| `GET /api/events` | **SSE** (`text/event-stream`): pushes `revision` + `guestStep` on change; initial event on connect. |
+| `GET /api/events` | **WebSocket** (primary) with **SSE** (`text/event-stream`) fallback: pushes `revision` + `guestStep` on change; initial event on connect. |
 | `POST /api/game/trivia/vote` | Submit trivia option per question (active in `game_trivia` only). |
 | `POST /api/game/quotes/vote` | Submit quote option per question (active in `game_quotes` only). |
 | `POST /api/game/bingo/mark` | Toggle a cell vs. server “now playing” title; apply **−5** if the tile does not match. |
@@ -104,7 +104,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
 
-**Real-time:** `PlayView` and `AdminPanel` open **`EventSource('/api/events')`** and refetch state on each message; on error they **close the stream and poll every ~2s**. The SSE implementation monitors for **revision changes** in Supabase, allowing it to work reliably across multiple Vercel Lambda instances.
+**Real-time:** `PlayView` and `AdminPanel` open **WebSocket** connection to `/api/events` and refetch state on each message; on error they **close the connection and fall back to SSE or poll every ~2s**. The WebSocket implementation monitors for **revision changes** in Supabase, allowing it to work reliably across multiple Vercel Lambda instances.
 
 <a id="server-state"></a>
 
@@ -172,7 +172,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |---------------------|------------------------|
 | Phase + game index | Explicit **`GuestStep`** sequence matching product order (protocol, per-game lobby + countdown + game + leaderboard, final). |
 | Mock sounds + random scores | **Real** trivia/bingo/quote UIs; scoring from votes, bingo claims, and content `correctIndex`. |
-| Poll only | **`GET /api/events`** SSE + **poll fallback** on `EventSource` error. |
+| Poll only | **`GET /api/events`** WebSocket (primary) + **SSE + poll fallback** on connection error. |
 | Game line-up TBD | **Three** games in `gameConfig.ts` aligned with spec (trivia, bingo, quotes). |
 | Optional `POST /api/admin/reset` | **Implemented.** |
 | `InstructionsScreen` + sessionStorage gate | **Removed** from flow; **party protocol** is `PartyProtocolScreen` + localStorage `party-protocol-complete`. |
@@ -191,11 +191,11 @@ The **`GuestStep`** approach ([Section 5.3](#server-state)) is the canonical mod
 
 localStorage keys are centralized in `clientStorage.ts`. On load: hydrate from localStorage, then **fetch** `/api/state`; if the server **revision** is ahead, game briefs describe dropping stale local round data.
 
-**Route prefetch:** When the guest reaches the nickname check-in (party protocol already done for this device, or they just completed it on `/`), `GuestEntryFlow` calls `router.prefetch("/play")` so the App Router loads `/play`’s RSC payload and client chunks in the background. That reduces the chance of a heavy download exactly when they tap “Join the party” and helps on congested Wi‑Fi. It does **not** remove the need for `/api/state`, SSE, or vote POSTs during play.
+**Route prefetch:** When the guest reaches the nickname check-in (party protocol already done for this device, or they just completed it on `/`), `GuestEntryFlow` calls `router.prefetch("/play")` so the App Router loads `/play`’s RSC payload and client chunks in the background. That reduces the chance of a heavy download exactly when they tap “Join the party” and helps on congested Wi‑Fi. It does **not** remove the need for `/api/state`, WebSocket/SSE fallback, or vote POSTs during play.
 
 **Production HTTP cache:** [`next.config.ts`](../next.config.ts) sets long-lived `Cache-Control` in **production** only for `/_next/static/*` (immutable, fingerprinted assets) and `/images/*` so repeat visits and reloads reuse JS/CSS/fonts and party images without hammering the origin.
 
-- Today: The SSE route handler (`/api/events`) polls the Supabase `session_store` for revision changes every ~1-2 seconds and pushes a message only when the revision increments.
+- Today: The WebSocket route handler (`/api/events`) polls the Supabase `session_store` for revision changes every ~1-2 seconds and pushes a message only when the revision increments. Falls back to SSE if WebSocket upgrade fails.
 - Benefit: This works across any number of serverless instances without needing a separate Pub/Sub service like Redis.
 
 ### 7.4 Team majority voting
@@ -221,7 +221,7 @@ src/
     api/
       players/route.ts
       state/route.ts
-      events/route.ts           # SSE
+      events/route.ts           # WebSocket (primary) + SSE fallback
       game/
         trivia/vote/route.ts
         quotes/vote/route.ts

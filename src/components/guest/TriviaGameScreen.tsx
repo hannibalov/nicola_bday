@@ -48,6 +48,10 @@ export default function TriviaGameScreen({
 }: TriviaGameScreenProps) {
   const fontBody = "var(--font-trivia-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-trivia-headline), ui-sans-serif, system-ui";
+
+  const currentQuestionId = useMemo(() => {
+    return teamMcqSync ? TRIVIA_QUESTIONS[teamMcqSync.questionIndex]?.id ?? null : null;
+  }, [teamMcqSync]);
   const total = TRIVIA_QUESTIONS.length;
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const guestFetch = useGuestApiFetch();
@@ -86,15 +90,15 @@ export default function TriviaGameScreen({
 
   const handleSelect = useCallback(
     (optionIndex: number) => {
-      if (!q || !canAnswer) return;
+      if (!q || !canAnswer || !currentQuestionId) return;
       setAnswers((prev) => {
-        const next = { ...prev, [q.id]: optionIndex };
+        const next = { ...prev, [currentQuestionId]: optionIndex };
         setTriviaAnswersLocal(next);
         return next;
       });
-      enqueueVote(q.id, optionIndex);
+      enqueueVote(currentQuestionId, optionIndex);
     },
-    [q, canAnswer, enqueueVote]
+    [q, canAnswer, currentQuestionId, enqueueVote],
   );
 
   const selected = q ? (answers[q.id] ?? null) : null;

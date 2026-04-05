@@ -33,29 +33,33 @@ const mockSessionState = (players: { id: string; nickname: string }[], revision 
 
 const mockFetch = jest.fn();
 
-type MockEventSource = {
+type MockWebSocket = {
   close: jest.Mock;
+  onopen: null | ((ev: Event) => void);
   onmessage: null | ((ev: MessageEvent) => void);
   onerror: null | ((ev: Event) => void);
+  onclose: null | ((ev: CloseEvent) => void);
 };
 
-let lastEventSource: MockEventSource | null = null;
+let lastWebSocket: MockWebSocket | null = null;
 
 jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+beforeEach(async () => {
   searchParamsMock.keyFromUrl = "admin-secret";
   mockFetch.mockClear();
   (globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
-  lastEventSource = null;
-  global.EventSource = jest.fn(() => {
-    const es: MockEventSource = {
+  lastWebSocket = null;
+  global.WebSocket = jest.fn(() => {
+    const ws: MockWebSocket = {
       close: jest.fn(),
+      onopen: null,
       onmessage: null,
       onerror: null,
+      onclose: null,
     };
-    lastEventSource = es;
-    return es;
-  }) as unknown as typeof EventSource;
+    lastWebSocket = ws;
+    return ws;
+  }) as unknown as typeof WebSocket;
 });
 
 describe("AdminPanel", () => {
@@ -283,10 +287,10 @@ describe("AdminPanel", () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    // Fire SSE event with the same revision
+    // Fire WebSocket event with the same revision
     act(() => {
-      if (lastEventSource?.onmessage) {
-        lastEventSource.onmessage(
+      if (lastWebSocket?.onmessage) {
+        lastWebSocket.onmessage(
           new MessageEvent("message", {
             data: JSON.stringify({ revision: 3, guestStep: "party_protocol", playerCount: 1 }),
           })
@@ -300,7 +304,7 @@ describe("AdminPanel", () => {
     });
   });
 
-  it("SSE message with higher revision DOES trigger a new admin state fetch", async () => {
+  it("WebSocket message with higher revision DOES trigger a new admin state fetch", async () => {
     let callCount = 0;
     mockFetch.mockImplementation((url: string | URL) => {
       const u = typeof url === "string" ? url : url.toString();
@@ -324,8 +328,8 @@ describe("AdminPanel", () => {
     });
 
     act(() => {
-      if (lastEventSource?.onmessage) {
-        lastEventSource.onmessage(
+      if (lastWebSocket?.onmessage) {
+        lastWebSocket.onmessage(
           new MessageEvent("message", {
             data: JSON.stringify({ revision: 4, guestStep: "party_protocol", playerCount: 2 }),
           })
@@ -338,8 +342,8 @@ describe("AdminPanel", () => {
     });
   });
 
-  it("SSE onerror closes EventSource and no second EventSource is opened", async () => {
-    const eventSourceSpy = global.EventSource as unknown as jest.Mock;
+  it("WebSocket onerror closes WebSocket and no second WebSocket is opened", async () => {
+    const webSocketSpy = global.WebSocket as unknown as jest.Mock;
     mockFetch.mockImplementation((url: string | URL) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("/api/admin/state")) {
@@ -356,16 +360,16 @@ describe("AdminPanel", () => {
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
 
-    const es = lastEventSource!;
+    const ws = lastWebSocket!;
     act(() => {
-      es.onerror?.(new Event("error"));
+      ws.onerror?.(new Event("error"));
     });
 
-    expect(es.close).toHaveBeenCalled();
-    expect(eventSourceSpy).toHaveBeenCalledTimes(1);
+    expect(ws.close).toHaveBeenCalled();
+    expect(webSocketSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("updates player count immediately from SSE even if revision is unchanged (no fetch)", async () => {
+  it("updates player count immediately from WebSocket even if revision is unchanged (no fetch)", async () => {
     mockFetch.mockImplementation((url: string | URL) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("/api/admin/state")) {
@@ -385,10 +389,10 @@ describe("AdminPanel", () => {
       expect(screen.getByTestId("admin-player-count")).toHaveTextContent("1");
     });
 
-    // Fire SSE event with same revision but updated player count
+    // Fire WebSocket event with same revision but updated player count
     act(() => {
-      if (lastEventSource?.onmessage) {
-        lastEventSource.onmessage(
+      if (lastWebSocket?.onmessage) {
+        lastWebSocket.onmessage(
           new MessageEvent("message", {
             data: JSON.stringify({ revision: 3, guestStep: "party_protocol", playerCount: 42 }),
           })

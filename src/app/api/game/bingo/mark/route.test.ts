@@ -30,18 +30,10 @@ jest.mock("next/headers", () => ({
 }));
 
 jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
-  resetTestTables();
+beforeEach(async () => {
   await resetSession();
   Object.keys(mockCookies).forEach(k => delete mockCookies[k]);
 });
-
-function authJsonHeaders(playerId: string): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    Cookie: `playerId=${encodeURIComponent(playerId)}`,
-  };
-}
 
 async function advanceUntilGameBingo() {
   let guard = 0;

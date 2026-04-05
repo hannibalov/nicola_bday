@@ -156,16 +156,15 @@ describe("store", () => {
       await advanceUntil("game_trivia");
       const teams = (await getSessionState()).teams;
       const teamA = teams[0]!;
-      let t = (await getSessionState()).teamMcqRoundStartedAtEpochMs!;
+      let now = Date.now();
       for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
         const q = TRIVIA_QUESTIONS[qi]!;
         for (const pid of teamA.playerIds) {
           expect((await submitTriviaVote(pid, q.id, q.correctIndex)).ok).toBe(true);
         }
-        if (qi < TRIVIA_QUESTIONS.length - 1) {
-          t += TEAM_MCQ_CYCLE_MS + 1;
-          await advancePhase(t);
-        }
+        const currentState = await getSessionState();
+        now = (currentState.teamMcqRoundStartedAtEpochMs ?? now) + TEAM_MCQ_CYCLE_MS;
+        await getSessionState(now);
       }
       await advancePhase();
       const board = (await getSessionState()).gameScores[GAMES[0].id]!;
@@ -371,9 +370,9 @@ describe("store", () => {
       expect(topRow?.totalForPlayer).toBe(100);
       const titles = bingoCardTitlesForPlayer(id);
       const pad = "__pad__";
-      setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 0);
+      await setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 0);
       await markBingoCell(id, 0, true);
-      setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 1);
+      await setBingoPlaybackForTests([titles[0]!, titles[3]!, pad, pad, pad, pad], 1);
       await markBingoCell(id, 3, true);
       const col = await claimBingo(id, ["0,3"]);
       expect(col?.awarded).toBe(50);

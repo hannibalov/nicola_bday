@@ -1,15 +1,51 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Use service role key to bypass RLS for session state writes (server-side only). */
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "";
 
-let supabase: any;
+type DbRecord = Record<string, unknown>;
+type TableStore = Record<string, DbRecord[]>;
+
+type MockBuilder = {
+    select: (columns?: string) => MockBuilder;
+    insert: (rows: unknown) => MockBuilder;
+    upsert: (rows: unknown) => MockBuilder;
+    update: (updates: Record<string, unknown>) => MockBuilder;
+    delete: () => MockBuilder;
+    eq: (col: string, val: unknown) => MockBuilder;
+    neq: (col: string, val: unknown) => MockBuilder;
+    in: (col: string, val: unknown[]) => MockBuilder;
+    match: (conditions: Record<string, unknown>) => MockBuilder;
+    single: () => MockBuilder;
+    then: (
+        resolve: (value: { data: DbRecord[] | DbRecord | null; error: null }) => unknown,
+        reject: (err: unknown) => unknown
+    ) => Promise<unknown>;
+};
+
+type MockChannel = {
+    on: (
+        event: string,
+        filter: Record<string, unknown>,
+        callback: (payload: { eventType: string; new: DbRecord | null; old: DbRecord | null }) => void
+    ) => MockChannel;
+    subscribe: () => Promise<unknown>;
+    unsubscribe: () => Promise<unknown>;
+    trigger: (payload: { eventType: string; new: DbRecord | null; old: DbRecord | null }) => void;
+};
+
+type MockSupabaseClient = {
+    from: (table: string) => MockBuilder;
+    channel: (name: string) => MockChannel;
+    removeChannel: (channel: unknown) => void;
+};
+
+let supabase: SupabaseClient | MockSupabaseClient;
 let resetTestTables: () => void = () => { };
 
 if (process.env.NODE_ENV === 'test') {
-    // In-memory database for tests
-    const tables: Record<string, any[]> = {
+    const tables: TableStore = {
         session: [{
             id: 1,
             guest_step: "party_protocol",
@@ -53,103 +89,181 @@ if (process.env.NODE_ENV === 'test') {
         tables.bingo_claims = [];
     };
 
-    resetTables(); // initial reset
-
+    resetTables();
     resetTestTables = resetTables;
 
-    const mockClient = {
-        from: (table: string) => {
-            const data = tables[table] || [];
-            return {
-                select: (columns?: string) => {
-                    const result = {
-                        eq: (col: string, val: any) => {
+    const createMockBuilder = (table: string): MockBuilder => {
+        const filterGroups: Array<{ col: string; val: unknown; type: 'eq' | 'neq' | 'in' | 'match' }> = [];
+        let operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
+        let payload: unknown = null;
+        let single = false;
+
+        const builder: MockBuilder = {
+            select(columns?: string) {
+                operation = 'select';
+                return builder;
+            },
+            insert(rows: unknown) {
+                operation = 'insert';
+                payload = rows;
+                return builder;
+            },
+            upsert(rows: unknown) {
+                operation = 'upsert';
+                payload = rows;
+                return builder;
+            },
+            update(updates: Record<string, unknown>) {
+                operation = 'update';
+                payload = updates;
+                return builder;
+            },
+            delete() {
+                operation = 'delete';
+                return builder;
+            },
+            eq(col: string, val: unknown) {
+                filterGroups.push({ col, val, type: 'eq' });
+                return builder;
+            },
+            neq(col: string, val: unknown) {
+                filterGroups.push({ col, val, type: 'neq' });
+                return builder;
+            },
+            in(col: string, val: unknown[]) {
+                filterGroups.push({ col, val, type: 'in' });
+                return builder;
+            },
+            match(conditions: Record<string, unknown>) {
+                filterGroups.push({ col: '', val: conditions, type: 'match' });
+                return builder;
+            },
+            single() {
+                single = true;
+                return builder;
+            },
+            then(resolve, reject) {
+                const execute = async () => {
+                    const result: { data: DbRecord[] | DbRecord | null; error: null } = { data: null, error: null };
+                    const tableStore = tables[table] ?? [];
+
+                    let matchedRows = [...tableStore];
+                    for (const f of filterGroups) {
+                        if (f.type === 'eq') {
+                            matchedRows = matchedRows.filter((r) => r[f.col] === f.val);
+                        } else if (f.type === 'neq') {
+                            matchedRows = matchedRows.filter((r) => r[f.col] !== f.val);
+                        } else if (f.type === 'in') {
+                            matchedRows = matchedRows.filter((r) => Array.isArray(f.val) && f.val.includes(r[f.col]));
+                        } else if (f.type === 'match' && typeof f.val === 'object' && f.val !== null) {
+                            matchedRows = matchedRows.filter((row) =>
+                                Object.entries(f.val as Record<string, unknown>).every(([k, v]) => row[k] === v)
+                            );
+                        }
+                    }
+
+                    if (operation === 'select') {
+                        result.data = [...matchedRows];
+                    } else if (operation === 'insert') {
+                        const rows = Array.isArray(payload) ? payload : [payload];
+                        tables[table] = [...tableStore, ...(rows as DbRecord[])];
+                        result.data = rows as DbRecord[];
+                    } else if (operation === 'upsert') {
+                        const rows = Array.isArray(payload) ? payload : [payload];
+                        const newStore = [...tableStore];
+                        (rows as DbRecord[]).forEach((row) => {
+                            let idx = -1;
                             if (table === 'session') {
-                                return { single: () => ({ data: tables.session[0], error: null }) };
+                                idx = 0;
+                            } else if (table === 'teams') {
+                                idx = newStore.findIndex((r) => r.id === (row as Record<string, unknown>).id);
+                            } else if (table === 'game_scores') {
+                                idx = newStore.findIndex((r) => r.game_id === (row as Record<string, unknown>).game_id && r.player_id === (row as Record<string, unknown>).player_id);
+                            } else if (table === 'votes') {
+                                idx = newStore.findIndex((r) => r.player_id === (row as Record<string, unknown>).player_id && r.game_id === (row as Record<string, unknown>).game_id && r.question_id === (row as Record<string, unknown>).question_id);
+                            } else if (table === 'bingo_marks') {
+                                idx = newStore.findIndex((r) => r.player_id === (row as Record<string, unknown>).player_id && r.cell_index === (row as Record<string, unknown>).cell_index);
+                            } else if (table === 'bingo_claims') {
+                                idx = newStore.findIndex((r) => r.player_id === (row as Record<string, unknown>).player_id && r.line_key === (row as Record<string, unknown>).line_key);
+                            } else if (table === 'players') {
+                                idx = newStore.findIndex((r) => r.id === (row as Record<string, unknown>).id);
+                            } else if (table === 'team_membership') {
+                                idx = newStore.findIndex((r) => r.team_id === (row as Record<string, unknown>).team_id && r.player_id === (row as Record<string, unknown>).player_id);
                             }
-                            return { data: data.filter((row: any) => row[col] === val), error: null };
-                        },
-                        neq: (col: string, val: any) => {
-                            // for delete
-                            return { data: null, error: null };
-                        },
-                        data: [...data],
-                        error: null,
-                    };
+                            if (idx >= 0) {
+                                newStore[idx] = { ...newStore[idx], ...(row as DbRecord) };
+                            } else {
+                                newStore.push(row as DbRecord);
+                            }
+                        });
+                        tables[table] = newStore;
+                        result.data = rows as DbRecord[];
+                    } else if (operation === 'update') {
+                        const matchedFingerprints = new Set(matchedRows.map((m) => JSON.stringify(m)));
+                        tables[table] = tableStore.map((r) =>
+                            matchedFingerprints.has(JSON.stringify(r)) ? { ...r, ...(payload as Record<string, unknown>) } : r
+                        );
+                        result.data = payload as DbRecord[];
+                    } else if (operation === 'delete') {
+                        const matchedFingerprints = new Set(matchedRows.map((m) => JSON.stringify(m)));
+                        tables[table] = tableStore.filter((r) => !matchedFingerprints.has(JSON.stringify(r)));
+                    }
+
+                    if (single) {
+                        result.data = Array.isArray(result.data) ? result.data[0] ?? null : result.data;
+                    }
+
                     return result;
-                },
-                update: (updates: any) => {
-                    return {
-                        eq: (col: string, val: any) => {
-                            if (table === 'session' && col === 'id' && val === 1) {
-                                const mapped: any = {};
-                                mapped.guest_step = updates.guest_step ?? updates.guestStep ?? tables.session[0].guest_step;
-                                mapped.revision = updates.revision ?? tables.session[0].revision;
-                                mapped.scheduled_start_ms = updates.scheduled_start_ms ?? updates.scheduledGameStartsAtEpochMs ?? tables.session[0].scheduled_start_ms;
-                                mapped.mcq_round_index = updates.mcq_round_index ?? updates.teamMcqRoundIndex ?? tables.session[0].mcq_round_index;
-                                mapped.mcq_round_start_ms = updates.mcq_round_start_ms ?? updates.teamMcqRoundStartedAtEpochMs ?? tables.session[0].mcq_round_start_ms;
-                                mapped.bingo_song_order = updates.bingo_song_order ?? updates.bingoSongOrder ?? tables.session[0].bingo_song_order;
-                                mapped.bingo_current_index = updates.bingo_current_index ?? updates.bingoCurrentSongIndex ?? tables.session[0].bingo_current_index;
-                                mapped.bingo_round_end_ms = updates.bingo_round_end_ms ?? updates.bingoRoundEndsAtEpochMs ?? tables.session[0].bingo_round_end_ms;
-                                mapped.updated_at = new Date().toISOString();
-                                tables.session[0] = { ...tables.session[0], ...mapped };
-                            }
-                            return { data: null, error: null };
-                        }
-                    };
-                },
-                delete: () => {
-                    return {
-                        eq: (col: string, val: any) => {
-                            tables[table] = tables[table].filter((r) => r[col] !== val);
-                            return { data: null, error: null };
-                        },
-                        neq: (col: string, val: any) => {
-                            tables[table] = [];
-                            return { data: null, error: null };
-                        },
-                        match: (conditions: any) => {
-                            tables[table] = tables[table].filter((row) => !Object.entries(conditions).every(([k, v]) => row[k] === v));
-                            return { data: null, error: null };
-                        }
-                    };
-                },
-                insert: (rows: any) => {
-                    const arr = Array.isArray(rows) ? rows : [rows];
-                    tables[table].push(...arr);
-                    return { data: null, error: null };
-                },
-                upsert: (rows: any) => {
-                    const arr = Array.isArray(rows) ? rows : [rows];
-                    arr.forEach((row) => {
-                        let existingIndex = -1;
-                        if (table === 'session') {
-                            existingIndex = 0;
-                        } else if (table === 'teams') {
-                            existingIndex = tables[table].findIndex((r) => r.id === row.id);
-                        } else if (table === 'game_scores') {
-                            existingIndex = tables[table].findIndex((r) => r.game_id === row.game_id && r.player_id === row.player_id);
-                        } else if (table === 'votes') {
-                            existingIndex = tables[table].findIndex((r) => r.player_id === row.player_id && r.game_id === row.game_id && r.question_id === row.question_id);
-                        } else if (table === 'bingo_marks') {
-                            existingIndex = tables[table].findIndex((r) => r.player_id === row.player_id && r.cell_index === row.cell_index);
-                        } else if (table === 'bingo_claims') {
-                            existingIndex = tables[table].findIndex((r) => r.player_id === row.player_id && r.line_key === row.line_key);
-                        } else if (table === 'players') {
-                            existingIndex = tables[table].findIndex((r) => r.id === row.id);
-                        } else if (table === 'team_membership') {
-                            existingIndex = tables[table].findIndex((r) => r.team_id === row.team_id && r.player_id === row.player_id);
-                        }
-                        if (existingIndex >= 0) {
-                            tables[table][existingIndex] = { ...tables[table][existingIndex], ...row };
-                        } else {
-                            tables[table].push(row);
-                        }
-                    });
-                    return { data: null, error: null };
-                },
-            };
-        },
+                };
+
+                return Promise.resolve().then(execute).then(resolve, reject);
+            },
+        };
+
+        return builder;
+    };
+
+    const createMockChannel = (channelName: string): MockChannel => {
+        let onCallback: ((payload: { eventType: string; new: DbRecord | null; old: DbRecord | null }) => void) | null = null;
+
+        return {
+            on(event: string, filter: Record<string, unknown>, callback: (payload: { eventType: string; new: DbRecord | null; old: DbRecord | null }) => void) {
+                const tableName = (filter?.table as string) || channelName.split(':')[0];
+                subscriptions.push({
+                    table: tableName,
+                    event,
+                    filter,
+                    callback,
+                });
+                onCallback = callback;
+                return createMockChannel(channelName);
+            },
+            subscribe() {
+                return Promise.resolve();
+            },
+            unsubscribe() {
+                const table = channelName.split(':')[0];
+                const idx = subscriptions.findIndex((s) => s.table === table);
+                if (idx >= 0) subscriptions.splice(idx, 1);
+                return Promise.resolve();
+            },
+            trigger(payload) {
+                if (onCallback) onCallback(payload);
+            },
+        };
+    };
+
+    const subscriptions: Array<{
+        table: string;
+        event: string;
+        filter: Record<string, unknown>;
+        callback: (payload: { eventType: string; new: DbRecord | null; old: DbRecord | null }) => void;
+    }> = [];
+
+    const mockClient: MockSupabaseClient = {
+        from: (table: string) => createMockBuilder(table),
+        channel: (name: string) => createMockChannel(name),
+        removeChannel: () => { },
     };
 
     supabase = mockClient;

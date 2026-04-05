@@ -15,6 +15,8 @@ const body = Be_Vietnam_Pro({
   variable: "--font-admin-body",
 });
 
+export const dynamic = 'force-dynamic';
+
 export default function AdminPage() {
   return (
     <MobileLayout>

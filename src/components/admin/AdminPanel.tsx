@@ -7,8 +7,8 @@ import { gameSlotFromGuestStep, getNextGuestStep } from "@/types";
 import { guestStepLabel, nextGuestStepLabel } from "@/lib/guestStepLabels";
 import { createAdaptivePoller } from "@/lib/adaptivePolling";
 import {
-  shouldAdminPanelUseEventSource,
-  parseSsePayload,
+  shouldAdminPanelUseWebSocket,
+  parseWebSocketPayload,
 } from "@/lib/sessionSyncTransport";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 
@@ -37,7 +37,7 @@ export default function AdminPanel() {
   const [justAdvanced, setJustAdvanced] = useState(false);
 
   /**
-   * Track the last revision received from admin state so SSE messages with the
+   * Track the last revision received from admin state so WebSocket messages with the
    * same revision do not trigger unnecessary re-fetches.
    */
   const lastKnownRevision = useRef<number>(-1);
@@ -83,24 +83,101 @@ export default function AdminPanel() {
   useEffect(() => {
     if (!committedKey.trim()) return;
     fetchState();
+    let ws: WebSocket | null = null;
     let es: EventSource | null = null;
     let poller: ReturnType<typeof createAdaptivePoller> | null = null;
-    const useSse = shouldAdminPanelUseEventSource();
+    let wsOpenTimeout: number | null = null;
+    const useWebSocket = shouldAdminPanelUseWebSocket();
 
-    if (!useSse) {
-      poller = createAdaptivePoller(fetchState, 4000, 30000);
-      poller.start();
+    const startPolling = () => {
+      if (poller == null) {
+        poller = createAdaptivePoller(fetchState, 4000, 30000);
+        poller.start();
+      }
+    };
+
+    const startEventSource = () => {
+      if (process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE === "1") {
+        startPolling();
+        return;
+      }
+
+      if (typeof EventSource === "undefined") {
+        startPolling();
+        return;
+      }
+
+      es = new EventSource("/api/events");
+      es.onmessage = (ev: MessageEvent) => {
+        const payload = parseWebSocketPayload(ev.data as string);
+        if (!payload) return;
+
+        setState((prev) => {
+          if (!prev) return null;
+          if (
+            prev.players.length === payload.playerCount &&
+            prev.revision === payload.revision &&
+            prev.guestStep === payload.guestStep
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            revision: payload.revision,
+            guestStep: payload.guestStep,
+            players:
+              prev.players.length === payload.playerCount
+                ? prev.players
+                : Array.from({ length: payload.playerCount }, (_, i) => ({
+                    id: `ws-${i}`,
+                    nickname: prev.players[i]?.nickname ?? "Connecting…",
+                  })),
+          };
+        });
+
+        if (
+          payload.revision > lastKnownRevision.current ||
+          payload.guestStep !== lastKnownStep.current
+        ) {
+          fetchState();
+        }
+      };
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        startPolling();
+      };
+    };
+
+    if (!useWebSocket) {
+      startPolling();
     } else {
       try {
-        es = new EventSource("/api/events");
-        es.onmessage = (ev: MessageEvent) => {
-          const payload = parseSsePayload(ev.data as string);
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/api/events`;
+        ws = new WebSocket(wsUrl);
+
+        wsOpenTimeout = window.setTimeout(() => {
+          if (ws) {
+            ws.close();
+            ws = null;
+            startEventSource();
+          }
+        }, 2000);
+
+        ws.onopen = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+        };
+
+        ws.onmessage = (ev: MessageEvent) => {
+          const payload = parseWebSocketPayload(ev.data as string);
           if (!payload) return;
 
-          // Optimization: update basic counters immediately from SSE without a fetch roundtrip.
           setState((prev) => {
             if (!prev) return null;
-            // Only update if something actually changed to avoid redundant React renders.
             if (
               prev.players.length === payload.playerCount &&
               prev.revision === payload.revision &&
@@ -112,21 +189,16 @@ export default function AdminPanel() {
               ...prev,
               revision: payload.revision,
               guestStep: payload.guestStep,
-              // We don't have the full player list here, just the count.
-              // To avoid a UI mismatch, we create a placeholder array if needed.
-              // This ensures the counter displays the live number instantly.
               players:
                 prev.players.length === payload.playerCount
                   ? prev.players
                   : Array.from({ length: payload.playerCount }, (_, i) => ({
-                      id: `sse-${i}`,
+                      id: `ws-${i}`,
                       nickname: prev.players[i]?.nickname ?? "Connecting…",
                     })),
             };
           });
 
-          // Only fetch full drill-down state if revision or step changed.
-          // Player count changes don't require full re-fetch of nicknames immediately.
           if (
             payload.revision > lastKnownRevision.current ||
             payload.guestStep !== lastKnownStep.current
@@ -135,21 +207,37 @@ export default function AdminPanel() {
           }
         };
 
-        es.onerror = () => {
-          es?.close();
-          es = null;
-          // Fall back to adaptive polling; do NOT try to reopen SSE to avoid loops.
-          if (poller == null) {
-            poller = createAdaptivePoller(fetchState, 4000, 30000);
-            poller.start();
+        const fallbackToSse = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+          ws?.close();
+          ws = null;
+          startEventSource();
+        };
+
+        ws.onerror = fallbackToSse;
+        ws.onclose = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+          if (ws) {
+            ws = null;
+            startEventSource();
           }
         };
       } catch {
-        poller = createAdaptivePoller(fetchState, 4000, 30000);
-        poller.start();
+        startEventSource();
       }
     }
+
     return () => {
+      if (wsOpenTimeout != null) {
+        window.clearTimeout(wsOpenTimeout);
+      }
+      ws?.close();
       es?.close();
       poller?.stop();
     };

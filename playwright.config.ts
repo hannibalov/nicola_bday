@@ -9,7 +9,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
+  workers: 3,
   timeout: 180_000,
   expect: { timeout: 25_000 },
   use: {
@@ -26,7 +26,7 @@ export default defineConfig({
   webServer: {
     command: `yarn build && yarn exec next start -p ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 300_000,
     stdout: "pipe",
     stderr: "pipe",
@@ -34,6 +34,7 @@ export default defineConfig({
       ...process.env,
       NICOLA_E2E_FAST_LOBBY: "1",
       NEXT_PUBLIC_NICOLA_PROTOCOL_TEST: "1",
+      NEXT_PUBLIC_NICOLA_DISABLE_SSE: "1",
     },
   },
 });

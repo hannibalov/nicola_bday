@@ -1,5 +1,6 @@
 import type {
   GuestStep,
+  GameConfig,
   LobbyTeamRoster,
   Team,
   SessionState,
@@ -43,32 +44,30 @@ const BINGO_GAME_ID = GAMES[1]?.id ?? "game-bingo";
 const TRIVIA_GAME_ID = GAMES[0]?.id ?? "game-trivia";
 const QUOTES_GAME_ID = GAMES[2]?.id ?? "game-quotes";
 
+type DbPlayer = { id: string; nickname: string };
+type DbTeam = { id: string; name: string; game_id: string | null };
+type DbMembership = { team_id: string; player_id: string };
+type DbScore = { game_id: string; player_id: string; score: number };
+type DbVote = { player_id: string; game_id: string; question_id: string; option_index: number };
+type DbMark = { player_id: string; cell_index: number };
+type DbClaim = { player_id: string; line_key: string };
+
+type DbSessionRow = {
+  guest_step?: SessionState["guestStep"];
+  revision?: number;
+  scheduled_start_ms?: unknown;
+  mcq_round_index?: number;
+  mcq_round_start_ms?: unknown;
+  bingo_song_order?: string[];
+  bingo_current_index?: number;
+  bingo_round_end_ms?: unknown;
+};
+
 const TRIVIA_QUESTION_IDS = new Set(TRIVIA_QUESTIONS.map((q) => q.id));
 
 function quoteQuestionIds(): Set<string> {
   return new Set(getQuoteQuestions().map((q) => q.id));
 }
-
-const INITIAL_STATE: Omit<
-  SessionState,
-  | "players"
-  | "teams"
-  | "gameScores"
-  | "bingoClaimedLineKeysByPlayer"
-  | "bingoMarkedByPlayer"
-  | "triviaVotesByPlayer"
-  | "quoteVotesByPlayer"
-> = {
-  guestStep: "party_protocol",
-  revision: 0,
-  scheduledGameStartsAtEpochMs: null,
-  teamMcqRoundIndex: 0,
-  teamMcqRoundStartedAtEpochMs: null,
-  games: GAMES,
-  bingoSongOrder: [],
-  bingoCurrentSongIndex: 0,
-  bingoRoundEndsAtEpochMs: null,
-};
 
 const LOBBY_STEPS_WITH_SCHEDULE = new Set<GuestStep>([
   "lobby_trivia",
@@ -81,11 +80,12 @@ const LOBBY_STEPS_WITH_SCHEDULE = new Set<GuestStep>([
  */
 async function getStoreState(): Promise<SessionState> {
   // 1. Core Session State (Explicit columns)
-  const { data: sessionData } = await supabase
+  const sessionResponse = await supabase
     .from("session")
     .select("*")
     .eq("id", 1)
     .single();
+  const sessionData = sessionResponse.data as DbSessionRow | null;
 
   const session: SessionState = {
     guestStep: (sessionData?.guest_step as GuestStep) || "party_protocol",
@@ -125,37 +125,45 @@ async function getStoreState(): Promise<SessionState> {
     supabase.from("bingo_claims").select("*"),
   ]);
 
+  const dbPlayers = (players || []) as DbPlayer[];
+  const dbTeams = (teams || []) as DbTeam[];
+  const dbMembership = (membership || []) as DbMembership[];
+  const dbScores = (scores || []) as DbScore[];
+  const dbVotes = (votes || []) as DbVote[];
+  const dbMarks = (marks || []) as DbMark[];
+  const dbClaims = (claims || []) as DbClaim[];
+
   // Map Players
-  session.players = (players || []).map((p) => ({ id: p.id, nickname: p.nickname }));
+  session.players = dbPlayers.map((p) => ({ id: p.id, nickname: p.nickname }));
 
   // Map Teams & Membership (Filtered by current game context)
   const currentSlot = gameSlotFromGuestStep(session.guestStep);
   const activeGameId = currentSlot === null ? null : GAMES[currentSlot]?.id;
 
-  session.teams = (teams || [])
+  session.teams = dbTeams
     .filter((t) => activeGameId === null || t.game_id === activeGameId)
     .map((t) => ({
       id: t.id,
       name: t.name,
-      playerIds: (membership || [])
+      playerIds: dbMembership
         .filter((m) => m.team_id === t.id)
         .map((m) => m.player_id),
     }));
 
   // Map Scores
-  (scores || []).forEach((s) => {
+  dbScores.forEach((s) => {
     if (!session.gameScores[s.game_id]) session.gameScores[s.game_id] = {};
     session.gameScores[s.game_id][s.player_id] = s.score;
   });
 
   // Map Votes
-  (votes || []).forEach((v) => {
+  dbVotes.forEach((v) => {
     const targetMap = v.game_id === TRIVIA_GAME_ID ? session.triviaVotesByPlayer : session.quoteVotesByPlayer;
     if (!targetMap[v.player_id]) targetMap[v.player_id] = {};
     targetMap[v.player_id][v.question_id] = v.option_index;
   });
 
-  (marks || []).forEach((m) => {
+  dbMarks.forEach((m) => {
     if (!session.bingoMarkedByPlayer[m.player_id]) {
       session.bingoMarkedByPlayer[m.player_id] = Array.from({ length: 6 }, () => false);
     }
@@ -164,7 +172,7 @@ async function getStoreState(): Promise<SessionState> {
       session.bingoMarkedByPlayer[m.player_id][idx] = true;
     }
   });
-  (claims || []).forEach((c) => {
+  dbClaims.forEach((c) => {
     if (!session.bingoClaimedLineKeysByPlayer[c.player_id]) {
       session.bingoClaimedLineKeysByPlayer[c.player_id] = [];
     }
@@ -197,9 +205,9 @@ async function commitTeamsAndMembership(state: SessionState): Promise<void> {
   const currentSlot = gameSlotFromGuestStep(state.guestStep);
   const activeGameId = currentSlot === null ? null : GAMES[currentSlot]?.id;
 
-  if (activeGameId && state.teams.length > 0) {
+  if (state.teams.length > 0) {
     const teamOps = state.teams.map(async (t) => {
-      await supabase.from("teams").upsert({ id: t.id, game_id: activeGameId, name: t.name });
+      await supabase.from("teams").upsert({ id: t.id, game_id: activeGameId ?? null, name: t.name });
       await supabase.from("team_membership").delete().eq("team_id", t.id);
       if (t.playerIds.length > 0) {
         await supabase.from("team_membership").insert(
@@ -305,7 +313,8 @@ async function applyDueScheduledTransitions(state: SessionState, nowMs: number):
     to = "game_quotes";
   }
 
-  await applyTransitionSideEffects(state, from, to);
+  const transitionAtMs = state.scheduledGameStartsAtEpochMs ?? nowMs;
+  await applyTransitionSideEffects(state, from, to, transitionAtMs);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.revision += 1;
@@ -323,7 +332,8 @@ async function applyDueBingoRoundEnd(state: SessionState, nowMs: number): Promis
 
   const from = state.guestStep;
   const to = "leaderboard_post_bingo" as const;
-  await applyTransitionSideEffects(state, from, to);
+  const transitionAtMs = state.bingoRoundEndsAtEpochMs ?? nowMs;
+  await applyTransitionSideEffects(state, from, to, transitionAtMs);
   state.guestStep = to;
   state.bingoRoundEndsAtEpochMs = null;
   state.revision += 1;
@@ -402,7 +412,7 @@ function lobbyTeamsFromSession(state: SessionState): LobbyTeamRoster[] {
   }));
 }
 
-async function applyTransitionSideEffects(state: SessionState, from: GuestStep, to: GuestStep): Promise<void> {
+async function applyTransitionSideEffects(state: SessionState, from: GuestStep, to: GuestStep, nowMs: number = Date.now()): Promise<void> {
   if (from === "game_bingo" && to !== "game_bingo") {
     state.bingoRoundEndsAtEpochMs = null;
     state.bingoSongOrder = [];
@@ -428,7 +438,7 @@ async function applyTransitionSideEffects(state: SessionState, from: GuestStep, 
   if (to === "game_quotes") {
     state.quoteVotesByPlayer = {};
     state.teamMcqRoundIndex = 0;
-    state.teamMcqRoundStartedAtEpochMs = Date.now();
+    state.teamMcqRoundStartedAtEpochMs = nowMs;
   }
 
   if (to === "game_bingo") {
@@ -439,7 +449,7 @@ async function applyTransitionSideEffects(state: SessionState, from: GuestStep, 
     shuffle(order);
     state.bingoSongOrder = order;
     state.bingoCurrentSongIndex = 0;
-    state.bingoRoundEndsAtEpochMs = Date.now() + BINGO_ROUND_DURATION_MS;
+    state.bingoRoundEndsAtEpochMs = nowMs + BINGO_ROUND_DURATION_MS;
   }
 
   if (to === "leaderboard_post_trivia") {
@@ -692,9 +702,8 @@ export async function submitTriviaVote(playerId: string, questionId: string, opt
   if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
   if (!TRIVIA_QUESTION_IDS.has(questionId)) return { ok: false, error: "bad_question" };
   if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
-
-  const activeId = activeTeamMcqQuestionId(state);
-  if (questionId !== activeId) return { ok: false, error: "wrong_question" };
+  const activeQuestionId = activeTeamMcqQuestionId(state);
+  if (activeQuestionId !== questionId) return { ok: false, error: "wrong_question" };
 
   const prev = state.triviaVotesByPlayer[playerId] ?? {};
   state.triviaVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
@@ -713,9 +722,8 @@ export async function submitQuoteVote(playerId: string, questionId: string, opti
   if (!state.players.some((p) => p.id === playerId)) return { ok: false, error: "unknown_player" };
   if (!quoteQuestionIds().has(questionId)) return { ok: false, error: "bad_question" };
   if (!isValidTriviaOptionIndex(optionIndex)) return { ok: false, error: "bad_option" };
-
-  const activeId = activeTeamMcqQuestionId(state);
-  if (questionId !== activeId) return { ok: false, error: "wrong_question" };
+  const activeQuestionId = activeTeamMcqQuestionId(state);
+  if (activeQuestionId !== questionId) return { ok: false, error: "wrong_question" };
 
   const prev = state.quoteVotesByPlayer[playerId] ?? {};
   state.quoteVotesByPlayer[playerId] = { ...prev, [questionId]: optionIndex };
@@ -748,12 +756,8 @@ export async function registerPlayer(nickname: string): Promise<string> {
     await supabase.from("team_membership").insert({ team_id: teamId, player_id: id });
   }
 
-  // We don't bother with local state.players push as commitState doesn't use it 
-  // and next API call will fetch from DB. 
-  // However, we increment revision to notify clients of a new player joining.
-  state.revision += 1;
-  await commitState(state);
   notifySessionChanged();
+
   return id;
 }
 
@@ -788,6 +792,8 @@ export async function getPublicState(playerId: string | null, nowMs?: number): P
     revision: state.revision,
     scheduledGameStartsAtEpochMs: state.scheduledGameStartsAtEpochMs,
     playerCount: state.players.length,
+    players: state.players,
+    teams: state.teams,
     currentGame: game,
     currentGameIndex: publicGameIndexFromGuestStep(step),
     myTeam,
@@ -795,6 +801,7 @@ export async function getPublicState(playerId: string | null, nowMs?: number): P
     leaderboard: isLeaderboardStep(step) ? getLeaderboardForGameSlot(state, slot ?? 0) : [],
     finalLeaderboard: step === "leaderboard_final" ? getFinalLeaderboard(state) : [],
     lobbyTeams: isLobbyStep(step) ? lobbyTeamsFromSession(state) : [],
+    gameScores: state.gameScores,
     myBingoClaimedLineKeys: (step === "game_bingo" && playerId) ? [...(state.bingoClaimedLineKeysByPlayer[playerId] ?? [])] : [],
     myBingoScore: (step === "game_bingo" && playerId) ? state.gameScores[BINGO_GAME_ID]?.[playerId] ?? 0 : 0,
     bingoRoundEndsAtEpochMs: step === "game_bingo" ? state.bingoRoundEndsAtEpochMs : null,
@@ -808,7 +815,7 @@ export async function getPublicState(playerId: string | null, nowMs?: number): P
   };
 }
 
-function getMyTeamInfo(state: SessionState, playerId: string | null, game: any): Team | null {
+function getMyTeamInfo(state: SessionState, playerId: string | null, game: GameConfig | null): Team | null {
   if (playerId && state.teams.length > 0 && game && shouldShowMyTeam(state, game)) {
     return state.teams.find((t) => t.playerIds.includes(playerId)) ?? null;
   }
@@ -846,14 +853,15 @@ function isLobbyStep(step: GuestStep) {
 export async function advancePhase(nowMs: number = Date.now()): Promise<void> {
   const initialState = await getStoreState();
   const startStep = initialState.guestStep;
-  let state = await applyPreconditions(initialState, nowMs);
+  const state = await applyPreconditions(initialState, nowMs);
   const from = state.guestStep;
   if (from !== startStep) return;
 
   if (LOBBY_STEPS_WITH_SCHEDULE.has(from) && state.scheduledGameStartsAtEpochMs != null) return;
 
   if (LOBBY_STEPS_WITH_SCHEDULE.has(from) && state.scheduledGameStartsAtEpochMs == null) {
-    state.scheduledGameStartsAtEpochMs = Date.now() + LOBBY_PRE_GAME_LEAD_MS;
+    const now = nowMs ?? Date.now();
+    state.scheduledGameStartsAtEpochMs = now + LOBBY_PRE_GAME_LEAD_MS;
     state.revision += 1;
     await commitState(state);
     notifySessionChanged();
@@ -862,7 +870,7 @@ export async function advancePhase(nowMs: number = Date.now()): Promise<void> {
 
   const to = getNextGuestStep(from);
   if (!to) return;
-  await applyTransitionSideEffects(state, from, to);
+  await applyTransitionSideEffects(state, from, to, nowMs);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.revision += 1;

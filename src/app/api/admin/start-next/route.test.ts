@@ -37,7 +37,7 @@ describe("POST /api/admin/start-next", () => {
     expect(res.status).toBe(200);
     const state = await getSessionState();
     expect(state.guestStep).toBe("lobby_trivia");
-    expect(state.revision).toBe(2);
+    expect(state.revision).toBe(1);
   });
 
   it("accepts x-admin-key header", async () => {

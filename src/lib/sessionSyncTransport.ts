@@ -7,23 +7,23 @@ import type { GuestStep } from "@/types";
 
 /**
  * Browsers limit concurrent HTTP/1.1 connections per host (often 6). Each
- * `EventSource` holds one until closed, so many `/play` tabs can block the next
+ * `WebSocket` holds one until closed, so many `/play` tabs can block the next
  * tab's `fetch` (e.g. register player). Protocol-test QA uses many tabs; poll
- * instead of SSE there. Set `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` to force polling
+ * instead of WebSocket there. Set `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` to force polling
  * for normal guests and the admin panel too.
  */
 
-/** Payload pushed by `GET /api/events`. */
-export interface SseSessionPayload {
+/** Payload pushed by WebSocket connection. */
+export interface WebSocketSessionPayload {
   revision: number;
   guestStep: GuestStep;
   playerCount: number;
 }
 
-/** Parse an SSE `MessageEvent.data` string into a typed payload; returns null on parse error. */
-export function parseSsePayload(data: string): SseSessionPayload | null {
+/** Parse a WebSocket message string into a typed payload; returns null on parse error. */
+export function parseWebSocketPayload(data: string): WebSocketSessionPayload | null {
   try {
-    const parsed = JSON.parse(data) as Partial<SseSessionPayload>;
+    const parsed = JSON.parse(data) as Partial<WebSocketSessionPayload>;
     if (
       typeof parsed.revision !== "number" ||
       typeof parsed.guestStep !== "string" ||
@@ -31,13 +31,13 @@ export function parseSsePayload(data: string): SseSessionPayload | null {
     ) {
       return null;
     }
-    return parsed as SseSessionPayload;
+    return parsed as WebSocketSessionPayload;
   } catch {
     return null;
   }
 }
 
-export function shouldGuestPlayViewUseEventSource(
+export function shouldGuestPlayViewUseWebSocket(
   searchParams: SearchParamsLike,
 ): boolean {
   if (process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE === "1") {
@@ -49,6 +49,12 @@ export function shouldGuestPlayViewUseEventSource(
   return true;
 }
 
-export function shouldAdminPanelUseEventSource(): boolean {
+export function shouldAdminPanelUseWebSocket(): boolean {
   return process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE !== "1";
 }
+
+export function parseSsePayload(data: string): WebSocketSessionPayload | null {
+  return parseWebSocketPayload(data);
+}
+
+export const shouldAdminPanelUseEventSource = shouldAdminPanelUseWebSocket;

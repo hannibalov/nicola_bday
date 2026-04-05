@@ -70,25 +70,25 @@ function postJsonWithPlayerCookie(
   path: string,
   playerId: string,
   body: unknown,
-): any {
-  return {
-    url: `http://localhost${path}`,
+): Request {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (playerId) {
+    headers.set("cookie", `playerId=${encodeURIComponent(playerId)}`);
+  }
+  return new Request(`http://localhost${path}`, {
     method: "POST",
-    json: async () => body,
-    headers: {
-      get: (name: string) => {
-        if (name === "cookie") return `playerId=${encodeURIComponent(playerId)}`;
-        return undefined;
-      }
-    },
-  };
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 async function registerViaApi(nickname: string): Promise<string> {
   const res = await postPlayers(
-    {
-      json: async () => ({ nickname }),
-    } as any
+    new Request("http://localhost/api/players", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname }),
+    })
   );
   expect(res.status).toBe(200);
   const data = (await res.json()) as { playerId: string };
@@ -112,17 +112,16 @@ async function readPublicState(): Promise<PublicState> {
 
 async function adminStartNext(): Promise<void> {
   const res = await postAdminStartNext(
-    {
-      url: `http://localhost/api/admin/start-next?key=${encodeURIComponent(ADMIN_SECRET)}`,
+    new Request(`http://localhost/api/admin/start-next?key=${encodeURIComponent(ADMIN_SECRET)}`, {
       method: "POST",
-    } as any
+    })
   );
   expect(res.status).toBe(200);
 }
 
 async function advanceGuestStepUntil(target: GuestStep) {
   let guard = 0;
-  let now = 1000000000000; // fixed time to avoid real time issues
+  let now = Date.now() + 10000; // fixed time to avoid real time issues
   while (guard < 50) {
     const s = await getSessionState(now);
     if (s.guestStep === target) break;
@@ -347,9 +346,9 @@ describe("session flow integration (HTTP + store)", () => {
     }
     await advanceGuestStepUntil("game_trivia");
 
-    const state = await getSessionState();
+    let now = Date.now();
+    let state = await getSessionState(now);
     const teamA = state.teams[0]!;
-    let t = state.teamMcqRoundStartedAtEpochMs!;
     for (let qi = 0; qi < TRIVIA_QUESTIONS.length; qi++) {
       const q = TRIVIA_QUESTIONS[qi]!;
       for (const pid of teamA.playerIds) {
@@ -362,13 +361,12 @@ describe("session flow integration (HTTP + store)", () => {
         );
         expect(r.status).toBe(200);
       }
-      if (qi < TRIVIA_QUESTIONS.length - 1) {
-        t += TEAM_MCQ_CYCLE_MS + 1;
-        await advancePhase(t);
-      }
+      state = await getSessionState(now);
+      now = (state.teamMcqRoundStartedAtEpochMs ?? now) + TEAM_MCQ_CYCLE_MS;
+      await getSessionState(now);
     }
     await adminStartNext();
-    const stateAfter = await getSessionState();
+    const stateAfter = await getSessionState(Date.now() + 10000);
     const board = stateAfter.gameScores[GAMES[0].id]!;
     const expected = TRIVIA_QUESTIONS.length * 50;
     teamA.playerIds.forEach((pid) => {

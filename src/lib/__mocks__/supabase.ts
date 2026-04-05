@@ -67,6 +67,14 @@ const createMockBuilder = (table: string) => {
             const rows = Array.isArray(payload) ? payload : [payload];
             stores[table] = [...tableStore, ...rows];
             result.data = rows;
+
+            subscriptions.forEach(sub => {
+              if (sub.table === table && (sub.event === '*' || sub.event === 'INSERT' || sub.event === 'postgres_changes')) {
+                rows.forEach(row => {
+                  sub.callback({ eventType: 'INSERT', new: row, old: null });
+                });
+              }
+            });
           } else if (operation === 'upsert') {
             const rows = Array.isArray(payload) ? payload : [payload];
             const newStore = [...stores[table]];
@@ -148,7 +156,7 @@ const createMockChannel = (channelName: string) => {
     }),
     subscribe: jest.fn(() => {
       // Simulate immediate subscription success
-      return Promise.resolve();
+      return Promise.resolve('SUBSCRIBED');
     }),
     unsubscribe: jest.fn(() => {
       // Remove subscriptions for this channel

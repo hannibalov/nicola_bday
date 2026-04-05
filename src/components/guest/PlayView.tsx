@@ -30,9 +30,11 @@ import LobbyScreen from "./LobbyScreen";
 import { isProtocolGateBypassed } from "@/lib/partyProtocolGate";
 import { buildProtocolTestPreserveQuery } from "@/lib/protocolTestMode";
 import {
-  shouldGuestPlayViewUseEventSource,
-  parseSsePayload,
+  shouldGuestPlayViewUseWebSocket,
+  parseWebSocketPayload,
 } from "@/lib/sessionSyncTransport";
+import { sortLeaderboardEntries } from "@/lib/leaderboardSort";
+import { buildTeamLeaderboardEntries } from "@/lib/store";
 
 export default function PlayView() {
   const router = useRouter();
@@ -107,20 +109,92 @@ export default function PlayView() {
   useEffect(() => {
     fetchState();
     let poller: ReturnType<typeof createAdaptivePoller> | null = null;
+    let ws: WebSocket | null = null;
     let es: EventSource | null = null;
-    const useSse = shouldGuestPlayViewUseEventSource(searchParams);
+    let wsOpenTimeout: number | null = null;
+    const useWebSocket = shouldGuestPlayViewUseWebSocket(searchParams);
 
-    if (!useSse) {
-      poller = createAdaptivePoller(fetchState, 4000, 30000);
-      poller.start();
+    const startPolling = () => {
+      if (poller == null) {
+        poller = createAdaptivePoller(fetchState, 4000, 30000);
+        poller.start();
+      }
+    };
+
+    const startEventSource = () => {
+      if (process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE === "1") {
+        startPolling();
+        return;
+      }
+
+      if (typeof EventSource === "undefined") {
+        startPolling();
+        return;
+      }
+
+      es = new EventSource("/api/events");
+      es.onmessage = (ev: MessageEvent) => {
+        const payload = parseWebSocketPayload(ev.data as string);
+        if (!payload) return;
+
+        setState((prev) => {
+          if (!prev) return null;
+          if (
+            prev.playerCount === payload.playerCount &&
+            prev.revision === payload.revision &&
+            prev.guestStep === payload.guestStep
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            playerCount: payload.playerCount,
+            revision: payload.revision,
+            guestStep: payload.guestStep,
+          };
+        });
+
+        if (
+          payload.revision > lastKnownRevision.current ||
+          payload.guestStep !== lastKnownStep.current
+        ) {
+          fetchState();
+        }
+      };
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        startPolling();
+      };
+    };
+
+    if (!useWebSocket) {
+      startPolling();
     } else {
       try {
-        es = new EventSource("/api/events");
-        es.onmessage = (ev: MessageEvent) => {
-          const payload = parseSsePayload(ev.data as string);
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/api/events`;
+        ws = new WebSocket(wsUrl);
+
+        wsOpenTimeout = window.setTimeout(() => {
+          if (ws) {
+            ws.close();
+            ws = null;
+            startEventSource();
+          }
+        }, 2000);
+
+        ws.onopen = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+        };
+
+        ws.onmessage = (ev: MessageEvent) => {
+          const payload = parseWebSocketPayload(ev.data as string);
           if (!payload) return;
 
-          // Optimization: update basic counters immediately from SSE without a fetch roundtrip.
           setState((prev) => {
             if (!prev) return null;
             if (
@@ -138,7 +212,6 @@ export default function PlayView() {
             };
           });
 
-          // Only fetch full drill-down state if revision or step actually changed.
           if (
             payload.revision > lastKnownRevision.current ||
             payload.guestStep !== lastKnownStep.current
@@ -147,21 +220,36 @@ export default function PlayView() {
           }
         };
 
-        es.onerror = () => {
-          es?.close();
-          es = null;
-          // Fall back to adaptive polling; do NOT try to reopen SSE to avoid loops.
-          if (poller == null) {
-            poller = createAdaptivePoller(fetchState, 4000, 30000);
-            poller.start();
+        const fallbackToSse = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+          ws?.close();
+          ws = null;
+          startEventSource();
+        };
+
+        ws.onerror = fallbackToSse;
+        ws.onclose = () => {
+          if (wsOpenTimeout != null) {
+            window.clearTimeout(wsOpenTimeout);
+            wsOpenTimeout = null;
+          }
+          if (ws) {
+            ws = null;
+            startEventSource();
           }
         };
       } catch {
-        poller = createAdaptivePoller(fetchState, 4000, 30000);
-        poller.start();
+        startEventSource();
       }
     }
     return () => {
+      if (wsOpenTimeout != null) {
+        window.clearTimeout(wsOpenTimeout);
+      }
+      ws?.close();
       es?.close();
       poller?.stop();
     };
@@ -214,7 +302,7 @@ export default function PlayView() {
     );
   }
 
-  if (state.guestStep === "lobby_trivia") {
+  if (state.guestStep === "lobby_trivia" || state.guestStep === "countdown_trivia") {
     return (
       <LobbyScreen
         variant="trivia"
@@ -226,7 +314,7 @@ export default function PlayView() {
     );
   }
 
-  if (state.guestStep === "lobby_bingo") {
+  if (state.guestStep === "lobby_bingo" || state.guestStep === "countdown_bingo") {
     return (
       <LobbyScreen
         variant="music_bingo"
@@ -237,7 +325,7 @@ export default function PlayView() {
     );
   }
 
-  if (state.guestStep === "lobby_quotes") {
+  if (state.guestStep === "lobby_quotes" || state.guestStep === "countdown_quotes") {
     return (
       <LobbyScreen
         variant="identify_quote"
@@ -294,16 +382,25 @@ export default function PlayView() {
     if (!state.currentGame) {
       return <WaitingLobby />;
     }
-    const highlightName =
+    const scores = state.gameScores[state.currentGame.id] ?? {};
+    const individualEntries = sortLeaderboardEntries(
+      state.players.map((p) => ({
+        name: p.nickname,
+        score: scores[p.id] ?? 0,
+      }))
+    );
+    const teamEntries =
       state.currentGame.type === "team"
-        ? (state.myTeam?.name ?? null)
-        : viewerNickname;
+        ? buildTeamLeaderboardEntries(state.teams, scores)
+        : [];
     return (
       <GameLeaderboard
         gameName={state.currentGame.name}
-        entries={state.leaderboard}
-        type={state.currentGame.type}
-        highlightName={highlightName}
+        individualEntries={individualEntries}
+        teamEntries={teamEntries}
+        initialType={state.currentGame.type}
+        highlightIndividualName={viewerNickname}
+        highlightTeamName={state.myTeam?.name ?? null}
       />
     );
   }

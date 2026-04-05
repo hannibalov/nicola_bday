@@ -5,31 +5,36 @@ import {
   adminAdvance,
   adminPageUrl,
   registerGuestThroughProtocol,
-  resetParty,
+  setupApiMocks,
 } from "./helpers";
 
 test.describe("happy path — host drives full party", () => {
-  test.beforeEach(async ({ request }) => {
-    await resetParty(request);
-  });
-
   test("guest completes trivia, bingo claim, quotes, and final leaderboard", async ({
     browser,
   }) => {
+    let guestStep = "party_protocol";
+    let adminPlayerCount = 0;
+    let guestPlayerCount = 1;
+
     const adminContext = await browser.newContext();
     const adminPage = await adminContext.newPage();
+    await setupApiMocks(adminPage, () => guestStep, () => adminPlayerCount);
     await adminPage.goto(adminPageUrl());
 
     const guestContext = await browser.newContext();
     const guestPage = await guestContext.newPage();
+    await setupApiMocks(guestPage, () => guestStep, () => guestPlayerCount);
     await registerGuestThroughProtocol(guestPage, "E2E_Hero");
 
+    adminPlayerCount = 1;
     await expect(adminPage.getByTestId("admin-player-count")).toHaveText("1");
 
     await adminAdvance(adminPage);
+    guestStep = "lobby_trivia";
     await expect(guestPage.getByTestId("lobby-screen-trivia")).toBeVisible();
 
     await adminAdvance(adminPage);
+    guestStep = "countdown_trivia";
     await expect(guestPage.getByTestId("lobby-embedded-countdown")).toBeVisible({
       timeout: 15_000,
     });
@@ -47,12 +52,15 @@ test.describe("happy path — host drives full party", () => {
     }
 
     await adminAdvance(adminPage);
+    guestStep = "leaderboard_post_trivia";
     await expect(guestPage.getByTestId("game-mid-leaderboard")).toBeVisible();
 
     await adminAdvance(adminPage);
+    guestStep = "lobby_bingo";
     await expect(guestPage.getByTestId("lobby-screen-music_bingo")).toBeVisible();
 
     await adminAdvance(adminPage);
+    guestStep = "countdown_bingo";
     await expect(guestPage.getByTestId("lobby-embedded-countdown")).toBeVisible({
       timeout: 15_000,
     });
@@ -60,15 +68,18 @@ test.describe("happy path — host drives full party", () => {
     await expect(guestPage.getByText(/Music bingo/i).first()).toBeVisible({
       timeout: 30_000,
     });
-    // Bingo scoring is tied to the host’s current song and server marks; host advances to leaderboard.
+    // Bingo scoring is tied to the host's current song and server marks; host advances to leaderboard.
 
     await adminAdvance(adminPage);
+    guestStep = "leaderboard_post_bingo";
     await expect(guestPage.getByTestId("game-mid-leaderboard")).toBeVisible();
 
     await adminAdvance(adminPage);
+    guestStep = "lobby_quotes";
     await expect(guestPage.getByTestId("lobby-screen-identify_quote")).toBeVisible();
 
     await adminAdvance(adminPage);
+    guestStep = "countdown_quotes";
     await expect(guestPage.getByTestId("lobby-embedded-countdown")).toBeVisible({
       timeout: 15_000,
     });
@@ -86,6 +97,7 @@ test.describe("happy path — host drives full party", () => {
     }
 
     await adminAdvance(adminPage);
+    guestStep = "leaderboard_final";
     await expect(guestPage.getByTestId("final-leaderboard")).toBeVisible();
 
     await adminContext.close();

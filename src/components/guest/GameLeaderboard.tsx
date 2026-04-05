@@ -1,6 +1,7 @@
 "use client";
 
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
+import { useState } from "react";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -26,21 +27,29 @@ function formatPoints(n: number): string {
 
 export interface GameLeaderboardProps {
   gameName: string;
-  entries: { name: string; score: number }[];
-  type: "individual" | "team";
-  /** Nickname (individual) or team name (team) — highlights matching row when set. */
-  highlightName?: string | null;
+  individualEntries: { name: string; score: number }[];
+  teamEntries: { name: string; score: number }[];
+  initialType: "individual" | "team";
+  /** Nickname for individual view — highlights matching row. */
+  highlightIndividualName?: string | null;
+  /** Team name for team view — highlights matching row. */
+  highlightTeamName?: string | null;
 }
 
 export default function GameLeaderboard({
   gameName,
-  entries,
-  type,
-  highlightName,
+  individualEntries,
+  teamEntries,
+  initialType,
+  highlightIndividualName,
+  highlightTeamName,
 }: GameLeaderboardProps) {
+  const [currentType, setCurrentType] = useState<"individual" | "team">(initialType);
   const fontBody = "var(--font-lb-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-lb-headline), ui-sans-serif, system-ui";
-  const modeLabel = type === "individual" ? "Individual" : "Squad";
+  const modeLabel = currentType === "individual" ? "Individual" : "Squad";
+  const entries = currentType === "individual" ? individualEntries : teamEntries;
+  const highlightName = currentType === "individual" ? highlightIndividualName : highlightTeamName;
 
   return (
     <div
@@ -89,27 +98,29 @@ export default function GameLeaderboard({
 
         <div
           className="mb-6 flex rounded-full border border-[#b3ac9f]/20 bg-[#eae2d0] p-1.5 shadow-inner"
-          role="status"
-          aria-label={`Display mode: ${modeLabel}`}
+          role="group"
+          aria-label="Display mode"
         >
-          <div
-            className={`flex-1 rounded-full py-2.5 text-center text-[10px] font-bold uppercase tracking-widest ${
-              type === "individual"
+          <button
+            onClick={() => setCurrentType("individual")}
+            className={`flex-1 rounded-full py-2.5 text-center text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              currentType === "individual"
                 ? "bg-gradient-to-br from-[#a33700] to-[#ff7943] text-white shadow-md"
-                : "text-[#605b50]"
+                : "text-[#605b50] hover:bg-[#d4cdb8]"
             }`}
           >
             Individual
-          </div>
-          <div
-            className={`flex-1 rounded-full py-2.5 text-center text-[10px] font-bold uppercase tracking-widest ${
-              type === "team"
+          </button>
+          <button
+            onClick={() => setCurrentType("team")}
+            className={`flex-1 rounded-full py-2.5 text-center text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              currentType === "team"
                 ? "bg-gradient-to-br from-[#a33700] to-[#ff7943] text-white shadow-md"
-                : "text-[#605b50]"
+                : "text-[#605b50] hover:bg-[#d4cdb8]"
             }`}
           >
             Squad
-          </div>
+          </button>
         </div>
 
         {entries.length === 0 ? (
