@@ -81,4 +81,44 @@ describe("parseWebSocketPayload", () => {
     const raw = JSON.stringify({ revision: 1, guestStep: "party_protocol" });
     expect(parseWebSocketPayload(raw)).toBeNull();
   });
+
+  it("parses a payload that includes a full public state", () => {
+    const raw = JSON.stringify({
+      revision: 2,
+      guestStep: "party_protocol",
+      playerCount: 3,
+      fullState: {
+        guestStep: "party_protocol",
+        revision: 2,
+        currentGameIndex: 0,
+        scheduledGameStartsAtEpochMs: null,
+        currentGame: null,
+        myTeam: null,
+        myTeammateNicknames: [],
+        lobbyTeams: [],
+        playerCount: 3,
+        players: [],
+        teams: [],
+        playerKnownToSession: true,
+        leaderboard: [],
+        finalLeaderboard: [],
+        games: [],
+        gameScores: {},
+        syncRevision: 2,
+        myBingoClaimedLineKeys: [],
+        myBingoScore: 0,
+        bingoRoundEndsAtEpochMs: null,
+        myBingoMarkedCells: [],
+        myTriviaVotes: {},
+        myQuoteVotes: {},
+        teamMcqSync: null,
+      },
+    });
+    expect(parseWebSocketPayload(raw)).toEqual({
+      revision: 2,
+      guestStep: "party_protocol",
+      playerCount: 3,
+      fullState: expect.any(Object),
+    });
+  });
 });

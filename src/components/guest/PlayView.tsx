@@ -70,41 +70,51 @@ export default function PlayView() {
    */
   const unknownSessionAttempts = useRef<number>(0);
 
+  const handleIncomingState = useCallback(
+    (data: PublicState | null) => {
+      if (!data) {
+        setState(null);
+        return;
+      }
+
+      if (data.playerKnownToSession === false) {
+        unknownSessionAttempts.current += 1;
+        if (unknownSessionAttempts.current >= 2) {
+          void (async () => {
+            try {
+              await fetch("/api/session/clear-player-cookie", {
+                method: "POST",
+                credentials: "include",
+              });
+            } catch {
+              /* still drop local state and send guest to check-in */
+            }
+            clearGuestRegistrationForRejoin();
+            const q = buildProtocolTestPreserveQuery(searchParams);
+            router.replace(q ? `/?${q}` : "/");
+          })();
+        }
+        return;
+      }
+
+      unknownSessionAttempts.current = 0;
+      lastKnownRevision.current = data.revision;
+      lastKnownStep.current = data.guestStep;
+      setState(data);
+      setLastKnownStep(data.guestStep, data.revision);
+    },
+    [router, searchParams],
+  );
+
   const fetchState = useCallback(() => {
     guestFetch("/api/state", searchParams, { credentials: "include" })
       .then((res) => res.json())
       .then((data: PublicState) => {
-        if (data.playerKnownToSession === false) {
-          unknownSessionAttempts.current += 1;
-          if (unknownSessionAttempts.current >= 2) {
-            void (async () => {
-              try {
-                await fetch("/api/session/clear-player-cookie", {
-                  method: "POST",
-                  credentials: "include",
-                });
-              } catch {
-                /* still drop local state and send guest to check-in */
-              }
-              clearGuestRegistrationForRejoin();
-              const q = buildProtocolTestPreserveQuery(searchParams);
-              router.replace(q ? `/?${q}` : "/");
-            })();
-          }
-          return;
-        }
-
-        // reset attempts on success
-        unknownSessionAttempts.current = 0;
-        lastKnownRevision.current = data.revision;
-        lastKnownStep.current = data.guestStep;
-        setState(data);
-        setLastKnownStep(data.guestStep, data.revision);
-
+        handleIncomingState(data);
       })
       .catch(() => setState(null))
       .finally(() => setLoading(false));
-  }, [router, searchParams]);
+  }, [handleIncomingState, searchParams]);
 
   useEffect(() => {
     fetchState();
@@ -136,6 +146,11 @@ export default function PlayView() {
       es.onmessage = (ev: MessageEvent) => {
         const payload = parseWebSocketPayload(ev.data as string);
         if (!payload) return;
+
+        if (payload.fullState) {
+          handleIncomingState(payload.fullState);
+          return;
+        }
 
         setState((prev) => {
           if (!prev) return null;
@@ -194,6 +209,11 @@ export default function PlayView() {
         ws.onmessage = (ev: MessageEvent) => {
           const payload = parseWebSocketPayload(ev.data as string);
           if (!payload) return;
+
+          if (payload.fullState) {
+            handleIncomingState(payload.fullState);
+            return;
+          }
 
           setState((prev) => {
             if (!prev) return null;

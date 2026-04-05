@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { formatSseData } from "@/lib/sseFormat";
-import { getSessionState } from "@/lib/store";
-import type { SessionState } from "@/types";
+import { getPublicState, getSessionState } from "@/lib/store";
+import { resolvePlayerIdFromRequest } from "@/lib/requestPlayer";
+import type { SessionState, PublicState } from "@/types";
 
 export const runtime = 'edge';
 export const dynamic = "force-dynamic";
@@ -24,25 +25,37 @@ type SessionRow = {
   revision: number;
 };
 
+type SessionEventPayload = {
+  revision: number;
+  guestStep: SessionState["guestStep"];
+  playerCount: number;
+  fullState?: PublicState;
+};
+
 export async function GET(request?: Request) {
   const req = request ?? new Request("http://localhost/api/events");
   const upgrade = req.headers.get("upgrade");
   if (upgrade && upgrade.toLowerCase() === "websocket") {
-    return handleWebSocket();
+    return handleWebSocket(req);
   }
-  return handleSSE();
+  return handleSSE(req);
 }
 
-const ensurePayload = async (sessionRow: SessionRow | null) => {
-  const state = await getSessionState();
+const ensurePayload = async (
+  request: Request,
+  sessionRow: SessionRow | null,
+): Promise<SessionEventPayload> => {
+  const playerId = resolvePlayerIdFromRequest(request);
+  const publicState = await getPublicState(playerId);
   return {
-    revision: sessionRow?.revision ?? state.revision,
-    guestStep: sessionRow?.guest_step ?? state.guestStep,
-    playerCount: state.players.length,
+    revision: sessionRow?.revision ?? publicState.revision,
+    guestStep: sessionRow?.guest_step ?? publicState.guestStep,
+    playerCount: publicState.playerCount,
+    fullState: publicState,
   };
 };
 
-async function handleWebSocket() {
+async function handleWebSocket(request: Request) {
   const { 0: client, 1: server } = new WebSocketPair();
 
   server.accept();
@@ -54,7 +67,7 @@ async function handleWebSocket() {
     .eq("id", 1)
     .single();
 
-  server.send(JSON.stringify(await ensurePayload(initial)));
+  server.send(JSON.stringify(await ensurePayload(request, initial)));
 
   const sessionChannel = supabase.channel("session_updates")
     .on(
@@ -64,7 +77,7 @@ async function handleWebSocket() {
         const newData = payload.new;
         if (!newData) return;
         try {
-          server.send(JSON.stringify(await ensurePayload(newData)));
+          server.send(JSON.stringify(await ensurePayload(request, newData)));
         } catch {
           // Handle error
         }
@@ -83,12 +96,7 @@ async function handleWebSocket() {
       { event: "INSERT", schema: "public", table: "players" } as any,
       (async () => {
         try {
-          const state = await getSessionState();
-          server.send(JSON.stringify({
-            revision: state.revision,
-            guestStep: state.guestStep,
-            playerCount: state.players.length,
-          }));
+          server.send(JSON.stringify(await ensurePayload(request, null)));
         } catch {
           // Handle error
         }
@@ -112,7 +120,7 @@ async function handleWebSocket() {
   } as ResponseInit & { webSocket: WebSocket });
 }
 
-async function handleSSE() {
+async function handleSSE(request: Request) {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -125,7 +133,7 @@ async function handleSSE() {
 
       controller.enqueue(
         encoder.encode(
-          formatSseData(await ensurePayload(initial))
+          formatSseData(await ensurePayload(request, initial))
         )
       );
 
@@ -139,7 +147,7 @@ async function handleSSE() {
             try {
               controller.enqueue(
                 encoder.encode(
-                  formatSseData(await ensurePayload(newData))
+                  formatSseData(await ensurePayload(request, newData))
                 )
               );
             } catch {
@@ -160,14 +168,9 @@ async function handleSSE() {
           { event: "INSERT", schema: "public", table: "players" } as any,
           (async () => {
             try {
-              const state = await getSessionState();
               controller.enqueue(
                 encoder.encode(
-                  formatSseData({
-                    revision: state.revision,
-                    guestStep: state.guestStep,
-                    playerCount: state.players.length,
-                  })
+                  formatSseData(await ensurePayload(request, null))
                 )
               );
             } catch {

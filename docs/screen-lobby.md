@@ -24,7 +24,7 @@ Reuse the **same page/component** with different **copy** and **optional team ro
 - Visible only when:
   1. Guest has completed check-in **and** party protocol (local flags).
   2. **Admin** has advanced the session to “lobby for this game.”
-- When the host opens this step, **all connected clients should auto-navigate** here (SSE preferred; polling fallback today in `PlayView`).
+- When the host opens this step, **all connected clients should auto-navigate** here (WebSocket preferred; polling fallback today in `PlayView`).
 - Clear explanation for trivia: **team answer = option chosen by the majority of phones in the team** (ties need a defined rule).
 
 ---

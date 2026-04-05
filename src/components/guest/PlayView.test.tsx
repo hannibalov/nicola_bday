@@ -136,7 +136,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error(`unexpected fetch ${u}`));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -193,7 +193,7 @@ describe("PlayView", () => {
     });
 
     jest.useFakeTimers();
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     // Wait for the poll (increased to 4s interval from 2s)
@@ -225,7 +225,7 @@ describe("PlayView", () => {
     });
     webSocketSpy.mockClear();
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
@@ -242,7 +242,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error(`unexpected fetch ${u}`));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
     await waitFor(() => expect(screen.queryByText(/Loading…/i)).toBeNull());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -276,7 +276,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error(`unexpected fetch ${u}`));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
     await waitFor(() => expect(screen.queryByText(/Loading…/i)).toBeNull());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -296,6 +296,64 @@ describe("PlayView", () => {
     });
   });
 
+  it("WebSocket onmessage with full public state does not trigger a refresh", async () => {
+    fetchMock.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/state")) {
+        return Promise.resolve(makeStateResponse({ revision: 5, syncRevision: 5 }));
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+
+    await act(async () => { render(<PlayView />); });
+    await waitFor(() => expect(screen.queryByText(/Loading…/i)).toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      if (lastWebSocket?.onmessage) {
+        lastWebSocket.onmessage(
+          new MessageEvent("message", {
+            data: JSON.stringify({
+              revision: 6,
+              guestStep: "party_protocol",
+              playerCount: 2,
+              fullState: {
+                playerKnownToSession: true,
+                guestStep: "party_protocol",
+                revision: 6,
+                currentGameIndex: 0,
+                countdownRemaining: null,
+                scheduledGameStartsAtEpochMs: null,
+                currentGame: null,
+                myTeam: null,
+                myTeammateNicknames: [],
+                lobbyTeams: [],
+                playerCount: 2,
+                players: [],
+                teams: [],
+                leaderboard: [],
+                finalLeaderboard: [],
+                games: [],
+                syncRevision: 6,
+                myBingoClaimedLineKeys: [],
+                myBingoScore: 0,
+                bingoRoundEndsAtEpochMs: null,
+                myBingoMarkedCells: [],
+                myTriviaVotes: {},
+                myQuoteVotes: {},
+                teamMcqSync: null,
+              },
+            }),
+          })
+        );
+      }
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("WebSocket onerror closes WebSocket and falls back to polling (no second WebSocket opened)", async () => {
     const webSocketSpy = global.WebSocket as unknown as jest.Mock;
     fetchMock.mockImplementation((url: string | URL) => {
@@ -306,7 +364,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error(`unexpected fetch ${u}`));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
@@ -334,7 +392,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error("unexpected"));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
     // Wait for the first fetch call
     expect(mockReplace).not.toHaveBeenCalled();
 
@@ -367,7 +425,7 @@ describe("PlayView", () => {
       return Promise.reject(new Error("unexpected"));
     });
 
-    render(<PlayView />);
+    await act(async () => { render(<PlayView />); });
     await waitFor(() => expect(screen.queryByText(/Loading…/i)).toBeNull());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 

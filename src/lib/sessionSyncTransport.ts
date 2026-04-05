@@ -3,7 +3,7 @@ import {
   PROTOCOL_TEST_QP,
   type SearchParamsLike,
 } from "./protocolTestMode";
-import type { GuestStep } from "@/types";
+import type { GuestStep, PublicState } from "@/types";
 
 /**
  * Browsers limit concurrent HTTP/1.1 connections per host (often 6). Each
@@ -18,6 +18,7 @@ export interface WebSocketSessionPayload {
   revision: number;
   guestStep: GuestStep;
   playerCount: number;
+  fullState?: PublicState;
 }
 
 /** Parse a WebSocket message string into a typed payload; returns null on parse error. */
@@ -29,6 +30,9 @@ export function parseWebSocketPayload(data: string): WebSocketSessionPayload | n
       typeof parsed.guestStep !== "string" ||
       typeof parsed.playerCount !== "number"
     ) {
+      return null;
+    }
+    if (parsed.fullState !== undefined && typeof parsed.fullState !== "object") {
       return null;
     }
     return parsed as WebSocketSessionPayload;

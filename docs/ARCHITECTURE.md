@@ -13,7 +13,7 @@ Mobile-first web app for a birthday party: **no authentication**, **Supabase for
 - **Guest (player):** joins with a quirky nickname, reads party info, waits for the host, then plays games in sequence with updates when the host advances the session.
 - **Admin (host):** opens a protected panel, sees how many players are connected, and advances the **global guest step** so every device stays aligned.
 
-**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **WebSocket** push session changes with **SSE/polling fallback** if the connection fails. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
+**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **WebSocket** push session changes with **SSE/polling fallback** if the connection fails. The event stream carries minimal sync metadata, while `/api/state` remains the canonical full-state refresh path. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
 
 ---
 
@@ -94,7 +94,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |---------------|------|
 | `POST /api/players` | Register nickname; response includes `playerId`; **httpOnly `playerId` cookie** set by server. |
 | `GET /api/state` | **`PublicState`** for the current cookie’s player: `guestStep`, revision, game, teams/lobby, leaderboards, vote snapshots; during bingo, `myBingoMarkedCells`, `myBingoClaimedLineKeys`, `myBingoScore`, `bingoRoundEndsAtEpochMs`. |
-| `GET /api/events` | **WebSocket** (primary) with **SSE** (`text/event-stream`) fallback: pushes `revision` + `guestStep` on change; initial event on connect. |
+| `GET /api/events` | **WebSocket** (primary) with **SSE** (`text/event-stream`) fallback: pushes `revision`, `guestStep`, and `playerCount` on change; initial event on connect. Clients refresh `/api/state` as needed to fetch the full session payload. |
 | `POST /api/game/trivia/vote` | Submit trivia option per question (active in `game_trivia` only). |
 | `POST /api/game/quotes/vote` | Submit quote option per question (active in `game_quotes` only). |
 | `POST /api/game/bingo/mark` | Toggle a cell vs. server “now playing” title; apply **−5** if the tile does not match. |
@@ -104,13 +104,13 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
 
-**Real-time:** `PlayView` and `AdminPanel` open **WebSocket** connection to `/api/events` and refetch state on each message; on error they **close the connection and fall back to SSE or poll every ~2s**. The WebSocket implementation monitors for **revision changes** in Supabase, allowing it to work reliably across multiple Vercel Lambda instances.
+**Real-time:** `PlayView` and `AdminPanel` open **WebSocket** connection to `/api/events` and use message payloads as update notifications; when a pushed revision or guest step changes, the client refetches `/api/state` for the full session state. On error they close the connection and fall back to SSE or polling (adaptive interval). The WebSocket implementation uses Supabase realtime subscriptions, allowing it to work reliably across multiple Vercel Lambda instances.
 
 <a id="server-state"></a>
 
 ### 5.3 Server state (`src/lib/store.ts`)
 
-- Persisted in **Supabase** (`session_store` table) as a single JSONB row.
+- Persisted in **Supabase** (`session` table) as the authoritative session row.
 - **Async store:** All store access and mutation functions are `async` and perform `getStoreState` (select) and `commitState` (upsert) operations.
 - **Step model:** `guestStep: GuestStep` with ordered transitions via `getNextGuestStep()`; initial step **`party_protocol`**.
 - **Teams:** `rebuildTeams()` runs when entering **`lobby_trivia`** and again when entering **`countdown_quotes`** so quote teams are **independent** from trivia teams. Chunk size **7** players per team (`Team 1`, …).
@@ -160,7 +160,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | Topic | Detail |
 |-------|--------|
 | Countdown vs host | Countdown is **visual** on the client; **advancement** to the game is **manual** via admin “Start next,” not automatic when the timer reaches 0. |
-| Deploy scale-out | State is shared via Supabase. SSE clients are notified of updates via a revision-check loop in the stream handler, making it scale-out safe. |
+| Deploy scale-out | State is shared via Supabase. WebSocket/SSE updates are delivered through Supabase realtime subscriptions, making it scale-out safe. |
 | Team size | Implementation uses **7** players per chunk; spec said ~6–7 — acceptable fixed choice. |
 | Empty / partial team votes | Majority logic only awards points when a team choice is resolved and matches correct; edge cases are covered in `majorityVote` / trivia scoring tests. |
 
@@ -195,7 +195,7 @@ localStorage keys are centralized in `clientStorage.ts`. On load: hydrate from l
 
 **Production HTTP cache:** [`next.config.ts`](../next.config.ts) sets long-lived `Cache-Control` in **production** only for `/_next/static/*` (immutable, fingerprinted assets) and `/images/*` so repeat visits and reloads reuse JS/CSS/fonts and party images without hammering the origin.
 
-- Today: The WebSocket route handler (`/api/events`) polls the Supabase `session_store` for revision changes every ~1-2 seconds and pushes a message only when the revision increments. Falls back to SSE if WebSocket upgrade fails.
+- Today: The `/api/events` handler uses Supabase realtime subscriptions for session and player updates, sending JSON over WebSocket or SSE. If the WebSocket upgrade fails, the client can fall back to SSE; if the stream closes, the UI falls back to polling.
 - Benefit: This works across any number of serverless instances without needing a separate Pub/Sub service like Redis.
 
 ### 7.4 Team majority voting
