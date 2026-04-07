@@ -7,7 +7,6 @@ import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 import { markPartyProtocolComplete } from "@/lib/clientStorage";
 import {
   countdownToPartyEventParts,
-  isProtocolContinueUnlocked,
   PARTY_EVENT_START_ISO,
   PARTY_MAPS_URL,
 } from "@/lib/partyProtocolGate";
@@ -29,14 +28,11 @@ export type PartyProtocolPhase = "pre_check_in" | "post_check_in";
 export interface PartyProtocolScreenProps {
   onCompleted: () => void;
   phase: PartyProtocolPhase;
-  /** When true, advance is allowed regardless of calendar (query param / env). */
-  gateBypass: boolean;
 }
 
 export default function PartyProtocolScreen({
   onCompleted,
   phase,
-  gateBypass,
 }: PartyProtocolScreenProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -45,12 +41,9 @@ export default function PartyProtocolScreen({
     return () => window.clearInterval(id);
   }, []);
 
-  const continueUnlocked =
-    gateBypass || isProtocolContinueUnlocked(nowMs);
   const { days, hours, minutes } = countdownToPartyEventParts(nowMs);
 
   function handleContinue() {
-    if (!continueUnlocked) return;
     markPartyProtocolComplete();
     onCompleted();
   }
@@ -351,29 +344,11 @@ export default function PartyProtocolScreen({
       </div>
 
       <section className="relative z-10 mt-12 space-y-5 text-center">
-        {!continueUnlocked && (
-          <p
-            className="text-xs font-bold uppercase tracking-wide text-[#a33700]"
-            data-test-id="protocol-locked-hint"
-          >
-            You’ll be able to continue from 11 April 2026.
-          </p>
-        )}
-        {gateBypass && (
-          <p
-            className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#0e666a]"
-            data-test-id="protocol-bypass-active"
-          >
-            Test mode · date lock bypassed
-          </p>
-        )}
         <PrimaryActionButton
           type="button"
           variant="gradient"
           onClick={handleContinue}
-          disabled={!continueUnlocked}
           data-test-id="party-protocol-continue"
-          aria-disabled={!continueUnlocked}
         >
           <span className="text-2xl font-black uppercase italic tracking-tighter">
             Let&apos;s party

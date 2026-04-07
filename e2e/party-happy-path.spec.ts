@@ -14,7 +14,7 @@ test.describe("happy path — host drives full party", () => {
   }) => {
     let guestStep = "party_protocol";
     let adminPlayerCount = 0;
-    let guestPlayerCount = 1;
+    const guestPlayerCount = 1;
 
     const adminContext = await browser.newContext();
     const adminPage = await adminContext.newPage();

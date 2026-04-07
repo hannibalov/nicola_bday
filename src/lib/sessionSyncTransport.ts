@@ -1,16 +1,13 @@
-import {
-  isProtocolTestSearchMode,
-  PROTOCOL_TEST_QP,
-  type SearchParamsLike,
-} from "./protocolTestMode";
 import type { GuestStep, PublicState } from "@/types";
 
 /**
  * Browsers limit concurrent HTTP/1.1 connections per host (often 6). Each
- * `WebSocket` holds one until closed, so many `/play` tabs can block the next
- * tab's `fetch` (e.g. register player). Protocol-test QA uses many tabs; poll
- * instead of WebSocket there. Set `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` to force polling
- * for normal guests and the admin panel too.
+ * `WebSocket` holds one until closed.
+ *
+ * `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` skips the guest PlayView WebSocket (poll
+ * only) — useful for some E2E setups. The admin panel always tries WebSocket
+ * first; on failure it falls back to SSE or polling (SSE is also skipped when
+ * that env is set).
  */
 
 /** Payload pushed by WebSocket connection. */
@@ -41,20 +38,13 @@ export function parseWebSocketPayload(data: string): WebSocketSessionPayload | n
   }
 }
 
-export function shouldGuestPlayViewUseWebSocket(
-  searchParams: SearchParamsLike,
-): boolean {
-  if (process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE === "1") {
-    return false;
-  }
-  if (isProtocolTestSearchMode(searchParams.get(PROTOCOL_TEST_QP))) {
-    return false;
-  }
-  return true;
+export function shouldGuestPlayViewUseWebSocket(): boolean {
+  return process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE !== "1";
 }
 
+/** Admin always uses WebSocket as the primary realtime transport (guest-only env does not apply). */
 export function shouldAdminPanelUseWebSocket(): boolean {
-  return process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE !== "1";
+  return true;
 }
 
 export function parseSsePayload(data: string): WebSocketSessionPayload | null {

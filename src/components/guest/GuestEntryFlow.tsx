@@ -6,21 +6,14 @@ import {
   useLayoutEffect,
   useState,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import NicknameForm from "./NicknameForm";
 import PartyProtocolScreen from "./PartyProtocolScreen";
 import {
-  getGuestPlayerIdForClient,
   hasCompletedPartyProtocol,
   markPartyProtocolComplete,
-  persistGuestProfile,
 } from "@/lib/clientStorage";
-import { isProtocolGateBypassed } from "@/lib/partyProtocolGate";
-import {
-  PROTOCOL_TEST_NICKNAME_QP,
-  withProtocolTestQuery,
-} from "@/lib/protocolTestMode";
 
 const headline = Epilogue({
   subsets: ["latin"],
@@ -36,24 +29,7 @@ const body = Be_Vietnam_Pro({
 
 export default function GuestEntryFlow() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [showCheckIn, setShowCheckIn] = useState(false);
-  const bypass = isProtocolGateBypassed(
-    process.env.NEXT_PUBLIC_NICOLA_PROTOCOL_TEST,
-    searchParams.get("protocolTest")
-  );
-  const nicknameForTest = bypass
-    ? (searchParams.get(PROTOCOL_TEST_NICKNAME_QP)?.trim() ?? "")
-    : "";
-  const testAutoJoinActive =
-    showCheckIn && bypass && nicknameForTest.length > 0;
-  /** Set to the nickname that last failed auto-join; cleared when URL nickname differs. */
-  const [autoJoinFailedForNickname, setAutoJoinFailedForNickname] = useState<
-    string | null
-  >(null);
-  const testAutoJoinFailed =
-    autoJoinFailedForNickname != null &&
-    autoJoinFailedForNickname === nicknameForTest;
 
   useLayoutEffect(() => {
     startTransition(() => {
@@ -63,61 +39,13 @@ export default function GuestEntryFlow() {
 
   useEffect(() => {
     if (!showCheckIn) return;
-    router.prefetch(withProtocolTestQuery("/play", searchParams));
-  }, [showCheckIn, router, searchParams]);
-
-  useEffect(() => {
-    if (!testAutoJoinActive || testAutoJoinFailed) return;
-
-    if (getGuestPlayerIdForClient(searchParams)) {
-      router.replace(withProtocolTestQuery("/play", searchParams));
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/players", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nickname: nicknameForTest }),
-        });
-        const data: { playerId?: string; error?: string } = await res.json();
-        if (cancelled) return;
-        if (!res.ok || !data.playerId) {
-          setAutoJoinFailedForNickname(nicknameForTest);
-          return;
-        }
-        persistGuestProfile(
-          {
-            playerId: data.playerId,
-            nickname: nicknameForTest,
-          },
-          true,
-        );
-        router.push(withProtocolTestQuery("/play", searchParams));
-        router.refresh();
-      } catch {
-        if (!cancelled) setAutoJoinFailedForNickname(nicknameForTest);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    testAutoJoinActive,
-    testAutoJoinFailed,
-    nicknameForTest,
-    router,
-    searchParams,
-  ]);
+    router.prefetch("/play");
+  }, [showCheckIn, router]);
 
   if (!showCheckIn) {
     return (
       <PartyProtocolScreen
         phase="pre_check_in"
-        gateBypass={bypass}
         onCompleted={() => {
           markPartyProtocolComplete();
           setShowCheckIn(true);
@@ -178,18 +106,7 @@ export default function GuestEntryFlow() {
             className="pointer-events-none absolute -top-10 -right-10 h-32 w-32 rounded-full bg-[#a6eff3]/40"
             aria-hidden
           />
-          {testAutoJoinActive && !testAutoJoinFailed ? (
-            <p
-              className="relative z-10 text-center text-base font-medium text-[#322e25]"
-              data-test-id="guest-test-auto-join"
-            >
-              Joining as{" "}
-              <span className="font-bold text-[#a33700]">{nicknameForTest}</span>
-              …
-            </p>
-          ) : (
-            <NicknameForm />
-          )}
+          <NicknameForm />
         </div>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3 px-1">

@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { GuestStep, SessionState } from "@/types";
+import type { GuestStep, Player, SessionState } from "@/types";
 import { gameSlotFromGuestStep, getNextGuestStep } from "@/types";
 import { guestStepLabel, nextGuestStepLabel } from "@/lib/guestStepLabels";
 import { createAdaptivePoller } from "@/lib/adaptivePolling";
 import {
   shouldAdminPanelUseWebSocket,
   parseWebSocketPayload,
+  type WebSocketSessionPayload,
 } from "@/lib/sessionSyncTransport";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 
@@ -22,6 +23,26 @@ function adminFetchHeaders(key: string): HeadersInit {
 
 const inputClassName =
   "w-full rounded-sm border-0 bg-[#eae2d0] px-6 py-5 text-xl font-bold text-[#322e25] outline-none transition-all placeholder:text-[#b3ac9f] focus:ring-2 focus:ring-[#a33700]/20 disabled:opacity-60";
+
+/** Collapse bursty session updates (e.g. many bingo marks) into one `/api/admin/state` request. */
+const ADMIN_REALTIME_STATE_DEBOUNCE_MS = 450;
+
+function playersFromEventPayload(
+  prev: SessionState,
+  payload: WebSocketSessionPayload,
+): Player[] {
+  const fs = payload.fullState;
+  if (fs?.players && fs.players.length === payload.playerCount) {
+    return fs.players;
+  }
+  if (prev.players.length === payload.playerCount) {
+    return prev.players;
+  }
+  return Array.from({ length: payload.playerCount }, (_, i) => ({
+    id: `ws-${i}`,
+    nickname: prev.players[i]?.nickname ?? "Connecting…",
+  }));
+}
 
 export default function AdminPanel() {
   const searchParams = useSearchParams();
@@ -87,7 +108,19 @@ export default function AdminPanel() {
     let es: EventSource | null = null;
     let poller: ReturnType<typeof createAdaptivePoller> | null = null;
     let wsOpenTimeout: number | null = null;
+    let reconnectAfterWsClose = true;
+    let realtimeFetchDebounce: number | null = null;
     const useWebSocket = shouldAdminPanelUseWebSocket();
+
+    const scheduleFetchFromRealtime = () => {
+      if (realtimeFetchDebounce != null) {
+        window.clearTimeout(realtimeFetchDebounce);
+      }
+      realtimeFetchDebounce = window.setTimeout(() => {
+        realtimeFetchDebounce = null;
+        fetchState();
+      }, ADMIN_REALTIME_STATE_DEBOUNCE_MS);
+    };
 
     const startPolling = () => {
       if (poller == null) {
@@ -125,13 +158,7 @@ export default function AdminPanel() {
             ...prev,
             revision: payload.revision,
             guestStep: payload.guestStep,
-            players:
-              prev.players.length === payload.playerCount
-                ? prev.players
-                : Array.from({ length: payload.playerCount }, (_, i) => ({
-                    id: `ws-${i}`,
-                    nickname: prev.players[i]?.nickname ?? "Connecting…",
-                  })),
+            players: playersFromEventPayload(prev, payload),
           };
         });
 
@@ -139,7 +166,7 @@ export default function AdminPanel() {
           payload.revision > lastKnownRevision.current ||
           payload.guestStep !== lastKnownStep.current
         ) {
-          fetchState();
+          scheduleFetchFromRealtime();
         }
       };
       es.onerror = () => {
@@ -189,13 +216,7 @@ export default function AdminPanel() {
               ...prev,
               revision: payload.revision,
               guestStep: payload.guestStep,
-              players:
-                prev.players.length === payload.playerCount
-                  ? prev.players
-                  : Array.from({ length: payload.playerCount }, (_, i) => ({
-                      id: `ws-${i}`,
-                      nickname: prev.players[i]?.nickname ?? "Connecting…",
-                    })),
+              players: playersFromEventPayload(prev, payload),
             };
           });
 
@@ -203,7 +224,7 @@ export default function AdminPanel() {
             payload.revision > lastKnownRevision.current ||
             payload.guestStep !== lastKnownStep.current
           ) {
-            fetchState();
+            scheduleFetchFromRealtime();
           }
         };
 
@@ -225,7 +246,9 @@ export default function AdminPanel() {
           }
           if (ws) {
             ws = null;
-            startEventSource();
+            if (reconnectAfterWsClose) {
+              startEventSource();
+            }
           }
         };
       } catch {
@@ -234,6 +257,10 @@ export default function AdminPanel() {
     }
 
     return () => {
+      reconnectAfterWsClose = false;
+      if (realtimeFetchDebounce != null) {
+        window.clearTimeout(realtimeFetchDebounce);
+      }
       if (wsOpenTimeout != null) {
         window.clearTimeout(wsOpenTimeout);
       }
@@ -484,7 +511,7 @@ export default function AdminPanel() {
                 hour: "2-digit",
                 minute: "2-digit",
               })}{" "}
-              (15 min), then scores lock for the leaderboard.
+              (20 min), then scores lock for the leaderboard.
             </p>
           ) : null}
           <PrimaryActionButton

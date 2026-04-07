@@ -1,83 +1,58 @@
-# WebSocket Migration Summary
+# WebSocket & realtime delivery (reference)
 
-## What Has Been Done
+This doc summarizes how **session sync** works after the migration from **SSE-only** to **WebSocket-first** on `GET /api/events`. It complements [ARCHITECTURE.md §5.2.1](./ARCHITECTURE.md#521-client-transport-sessionSyncTransport).
 
-### 1. Test Updates
-- **sessionSyncTransport.test.ts**: Updated to assert WebSocket selection logic and payload parsing for the current client transport.
-  - Verifies guest WebSocket is enabled by default, disabled in `protocolTest=1`, and disabled when `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`.
-  - Verifies admin WebSocket selection and payload parsing behavior.
+---
 
-- **PlayView.test.tsx**: Updated to use WebSocket mocks and validate state refresh logic.
-  - Verifies initial `/api/state` fetch, WebSocket connect behavior, same-revision message suppression, and higher-revision refresh.
-  - Verifies protocol-test mode skips WebSocket and falls back to polling.
+## Current architecture
 
-- **AdminPanel.test.tsx**: Updated to use WebSocket mocks and validate admin state refresh logic.
-  - Verifies initial admin state fetch, human-readable labels, advance action, invalid key handling, WebSocket same-revision suppression, and higher-revision refresh.
+| Piece | Behavior |
+|-------|----------|
+| **`GET /api/events`** | **Edge** route: **WebSocket** upgrade when supported, else **SSE** (`text/event-stream`). Emits JSON: `revision`, `guestStep`, `playerCount`, optionally `fullState`. Backed by **Supabase Realtime** (unique channel names per connection so concurrent streams do not clash). |
+| **Guest `PlayView`** | Opens WebSocket to `ws(s)://…/api/events` when `shouldGuestPlayViewUseWebSocket()` is true. Refetches **`GET /api/state`** when revision/step changes (or when `fullState` is not enough). Fallback: SSE → adaptive **polling**. |
+| **Admin `AdminPanel`** | **Always** opens WebSocket first (`shouldAdminPanelUseWebSocket()` is always `true`). Refetches **`GET /api/admin/state`** (debounced). Same fallback chain; SSE step is skipped when `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`. |
+| **`src/lib/sessionSyncTransport.ts`** | `parseWebSocketPayload`, guest vs admin WebSocket flags, shared parsing for WS and SSE payloads. |
+| **`src/lib/guestFetch.ts`** | Cookie-authenticated `fetch` for guest APIs (not used for `/api/events`). |
 
-## Current Status
-- ✅ Client-side components use WebSocket as the primary transport.
-- ✅ `/api/events` supports both WebSocket upgrades and SSE fallback.
-- ✅ The code still uses `/api/state` as the authoritative full-state fetch after WebSocket notifications.
-- ⚠️ Polling remains a fallback path for protocol-test mode, WebSocket/SSE failure, or explicit disablement via `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`. 
+### Environment: `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`
 
-### 2. Component Logic Updates
-- **sessionSyncTransport.ts**: Renamed interfaces and functions
-  - `SseSessionPayload` → `WebSocketSessionPayload`
-  - `parseSsePayload` → `parseWebSocketPayload`
-  - `shouldGuestPlayViewUseEventSource` → `shouldGuestPlayViewUseWebSocket`
-  - `shouldAdminPanelUseEventSource` → `shouldAdminPanelUseWebSocket`
+- **Guest:** Does **not** open a WebSocket; uses **polling** only for session sync. If WebSocket were opened and failed, the SSE fallback would also be skipped in favor of polling.
+- **Admin:** **Unaffected** for the primary transport — still uses WebSocket first. Only the **SSE** leg of the fallback is skipped when the env is set (goes to polling after a failed socket).
 
-- **PlayView.tsx**: Replaced EventSource with WebSocket
-  - Updated imports to use WebSocket functions
-  - Changed `useEffect` to create WebSocket connection instead of EventSource
-  - Added proper WebSocket event handlers: `onopen`, `onmessage`, `onerror`, `onclose`
-  - WebSocket URL construction: `ws://` or `wss://` based on protocol
+**Playwright** sets this flag in `playwright.config.ts` so guest E2E avoids WebSocket harness quirks; the admin UI still exercises WebSocket against `next start`.
 
-- **AdminPanel.tsx**: Replaced EventSource with WebSocket
-  - Updated imports to use WebSocket functions
-  - Changed `useEffect` to create WebSocket connection
-  - Added WebSocket event handlers
-  - Updated placeholder ID generation from `sse-${i}` to `ws-${i}`
+---
 
-### 3. Server-Side API Updates
-- **`/api/events/route.ts`**: Modified to support both WebSocket and SSE
-  - Added `runtime = 'edge'` for WebSocket support in Vercel
-  - Split `GET` function to handle WebSocket upgrades and fallback to SSE
-  - Added `handleWebSocket()` function using `WebSocketPair()`
-  - Added `handleSSE()` function preserving original SSE logic
-  - WebSocket sends JSON messages instead of SSE formatted data
+## Tests
 
-## Current Status
-- ✅ Client-side components updated to use WebSocket
-- ✅ Test mocks updated for WebSocket
-- ✅ AdminPanel and PlayView unit tests now encode the current state-refresh behavior: same-revision messages are suppressed, higher-revision messages trigger a refresh, and player-count updates are reflected without extra fetches.
-- ⚠️ Full `yarn test` may still show unrelated failures in other areas; this summary focuses on the WebSocket migration path.
+| File | What it covers |
+|------|----------------|
+| **`sessionSyncTransport.test.ts`** | Guest WebSocket on/off vs env; admin WebSocket always on; `parseWebSocketPayload` edge cases. |
+| **`PlayView.test.tsx`** | Mock WebSocket, `/api/state` refresh rules, stale-player redirect. |
+| **`AdminPanel.test.tsx`** | Mock WebSocket, admin state fetch, debounced refetch, advance/reset flows. |
 
-## What's Left to Be Done
+Run **`yarn test`** and **`yarn lint`** before merging (see [ARCHITECTURE.md §11–12](./ARCHITECTURE.md#tdd)).
 
-### 1. Fix remaining integration and E2E failures
-- Investigate why the guest lobby does not render after the admin advances the step in Playwright tests
-- Confirm that the `/api/events` route supports the WebSocket handshake in the deployed runtime and test harness
-- Resolve the failing store/integration test regressions exposed by the work so the full suite passes again
+---
 
-### 2. Harden route handler and runtime compatibility
-- Ensure `GET /api/events` works in both edge/websocket upgrade and standard SSE modes
-- Add proper test coverage for WebSocket route upgrades and fallback behavior
-- Make the route stable in Node/Jest test environments as well as Next.js Edge runtime
+## Historical migration notes (completed)
 
-### 3. Verify fallback behavior
-- Confirm polling fallback works when `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`
-- Confirm protocol test mode (`protocolTest=1`) continues to skip WebSocket and uses polling
-- Confirm client-side fallback to SSE is working when WebSocket fails
+- **`SseSessionPayload`** → **`WebSocketSessionPayload`**; **`parseSsePayload`** → **`parseWebSocketPayload`** (SSE still uses the same parser for `data:` lines).
+- **`PlayView`** / **`AdminPanel`**: `EventSource` replaced with **`WebSocket`**, with **`onopen` / `onmessage` / `onerror` / `onclose`** and timeout → SSE fallback.
+- **Admin** placeholder player rows use ids like `ws-${i}` when count updates without full player list.
+- **`/api/events`**: `WebSocketPair()` on Edge; **`handleSSE()`** preserves prior SSE behavior.
 
-### 4. Documentation updates
-- Update `docs/ARCHITECTURE.md` to reflect WebSocket instead of SSE
-- Keep the migration summary in sync with the actual route and client behavior
+---
 
-## Technical Notes
-- WebSocket provides full-duplex communication vs SSE's one-way server-to-client
-- Client constructs WebSocket URL using `ws://` or `wss://` based on HTTP protocol
-- Server aims to use `WebSocketPair()` in Edge Runtime for upgrade handling
-- Fallback path is now intended to preserve SSE or polling when WebSocket connections cannot be established
-- `AdminPanel` and `PlayView` now include fallback logic for unavailability of WebSocket or EventSource in the current environment</content>
-<parameter name="filePath">/Users/rodrigopizarro/Documents/projects/personal/nicola_bday/WEBSOCKET_MIGRATION_STATUS.md
+## Optional follow-ups
+
+- Extra route-level tests for WebSocket upgrade + SSE fallback if the suite still gaps edge cases.
+- Confirm production/runtime behavior matches local `next start` for long-lived admin tabs (reconnect + debounced refetch).
+
+---
+
+## Technical notes
+
+- WebSocket is full-duplex; the app only uses **server → client** JSON messages today.
+- URL scheme: `wss:` when the page is `https:`, else `ws:`.
+- Supabase shared client: Realtime **channel names** must be unique per `/api/events` connection; postgres filters on `session` / `players` unchanged.

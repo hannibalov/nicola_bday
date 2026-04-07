@@ -304,6 +304,56 @@ describe("AdminPanel", () => {
     });
   });
 
+  it("debounces several rapid WebSocket revision bumps into one follow-up fetch", async () => {
+    let adminFetches = 0;
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/admin/state")) {
+        adminFetches++;
+        const rev = adminFetches === 1 ? 1 : 9;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(
+              mockSessionState([{ id: "1", nickname: "Alice" }], rev)
+            ),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${u}`));
+    });
+
+    render(<AdminPanel />);
+
+    await waitFor(() => {
+      expect(adminFetches).toBe(1);
+    });
+
+    act(() => {
+      for (let r = 2; r <= 8; r++) {
+        lastWebSocket?.onmessage?.(
+          new MessageEvent("message", {
+            data: JSON.stringify({
+              revision: r,
+              guestStep: "party_protocol",
+              playerCount: 1,
+            }),
+          })
+        );
+      }
+    });
+
+    expect(adminFetches).toBe(1);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    await waitFor(() => {
+      expect(adminFetches).toBe(2);
+    });
+  });
+
   it("WebSocket message with higher revision DOES trigger a new admin state fetch", async () => {
     let callCount = 0;
     mockFetch.mockImplementation((url: string | URL) => {

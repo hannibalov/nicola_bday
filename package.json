@@ -10,8 +10,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e": "NICOLA_E2E_FAST_LOBBY=1 playwright test",
+    "test:e2e:headed": "NICOLA_E2E_FAST_LOBBY=1 playwright test --headed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

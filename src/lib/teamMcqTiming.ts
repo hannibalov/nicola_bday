@@ -6,7 +6,7 @@
 const fast = process.env.NICOLA_E2E_FAST_LOBBY === "1";
 
 /** Time players have to tap an answer. */
-export const TEAM_MCQ_ANSWER_MS = fast ? 400 : 10_000;
+export const TEAM_MCQ_ANSWER_MS = fast ? 400 : 15_000;
 
 /** After answer window: show correct option (green) for everyone. */
 export const TEAM_MCQ_REVEAL_MS = fast ? 150 : 3_000;

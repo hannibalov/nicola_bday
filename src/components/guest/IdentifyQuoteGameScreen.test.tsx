@@ -21,7 +21,7 @@ function syncAtQuestion(
     questionIndex: i,
     roundStartedAtEpochMs: opts?.roundStartedAtEpochMs ?? Date.now(),
     totalQuestions: QUESTIONS.length,
-    answerMs: opts?.answerMs ?? 10_000,
+    answerMs: opts?.answerMs ?? 15_000,
     revealMs: opts?.revealMs ?? 3_000,
   };
 }

@@ -1,3 +1,14 @@
+# Nicola birthday party
+
+Mobile-first guest + host web app for a party: check-in, party protocol, team trivia, music bingo, team “who said it,” and leaderboards. Shared state in **Supabase**; real-time via **WebSocket** with SSE/poll fallback.
+
+- **Product + implementation map:** [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- **Game / screen briefs:** [docs/](./docs/) (`game-*.md`, `screen-*.md`)
+
+Quality gate: **`yarn test`** then **`yarn lint`** (see ARCHITECTURE §11–12).
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

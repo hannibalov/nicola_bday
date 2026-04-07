@@ -33,7 +33,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NICOLA_E2E_FAST_LOBBY: "1",
-      NEXT_PUBLIC_NICOLA_PROTOCOL_TEST: "1",
+      /** Guest PlayView uses polling only in E2E; admin still uses WebSocket. */
       NEXT_PUBLIC_NICOLA_DISABLE_SSE: "1",
     },
   },

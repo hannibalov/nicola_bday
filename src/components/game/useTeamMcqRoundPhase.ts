@@ -36,7 +36,7 @@ export function effectiveTeamMcqSync(
 
 export function useTeamMcqRoundPhase(sync: TeamMcqPublicSync | null): {
   phase: TeamMcqUiPhase;
-  /** Whole seconds left while answering (10 … 1, then 0 at deadline). */
+  /** Whole seconds left while answering (15 … 1, then 0 at deadline). */
   secondsLeft: number;
   /** Timeline-adjusted sync (question index + round start) for binding UI. */
   activeSync: TeamMcqPublicSync | null;

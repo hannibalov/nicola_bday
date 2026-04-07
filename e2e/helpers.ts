@@ -1,4 +1,7 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { TRIVIA_QUESTIONS } from "../src/content/trivia";
+import { getQuoteQuestions } from "../src/lib/quoteContent";
+import { GAMES } from "../src/lib/gameConfig";
 
 export const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "admin-secret";
 
@@ -86,21 +89,72 @@ export async function setupApiMocks(
       finalStep = `game_${game}`;
     }
 
+    const currentGame =
+      finalStep === "game_trivia" || finalStep === "leaderboard_post_trivia"
+        ? GAMES[0]
+        : finalStep === "game_bingo" || finalStep === "leaderboard_post_bingo"
+        ? GAMES[1]
+        : finalStep === "game_quotes" || finalStep === "leaderboard_final"
+        ? GAMES[2]
+        : null;
+
+    const teamMcqSync =
+      finalStep === "game_trivia"
+        ? {
+            questionIndex: 0,
+            roundStartedAtEpochMs: Date.now() - 1000,
+            totalQuestions: TRIVIA_QUESTIONS.length,
+            answerMs: 15000,
+            revealMs: 2000,
+          }
+        : finalStep === "game_quotes"
+        ? {
+            questionIndex: 0,
+            roundStartedAtEpochMs: Date.now() - 1000,
+            totalQuestions: getQuoteQuestions().length,
+            answerMs: 15000,
+            revealMs: 2000,
+          }
+        : null;
+
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         guestStep: finalStep,
-        playerCount: getPlayerCount(),
         revision: 0,
+        currentGameIndex:
+          finalStep === "game_trivia" || finalStep === "leaderboard_post_trivia"
+            ? 0
+            : finalStep === "game_bingo" || finalStep === "leaderboard_post_bingo"
+            ? 1
+            : finalStep === "game_quotes" || finalStep === "leaderboard_final"
+            ? 2
+            : 0,
+        scheduledGameStartsAtEpochMs: scheduled,
+        currentGame,
+        playerCount: getPlayerCount(),
+        playerKnownToSession: true,
         players: [],
         teams: [],
-        currentGame: null,
-        scheduledGameStartsAtEpochMs: scheduled,
-        myBingoMarkedCells: [],
+        myTeam: null,
+        myTeammateNicknames: [],
+        leaderboard: [],
+        finalLeaderboard: finalStep === "leaderboard_final" ? [] : [],
+        games: GAMES,
+        gameScores: {
+          [GAMES[0].id]: {},
+          [GAMES[1].id]: {},
+          [GAMES[2].id]: {},
+        },
+        syncRevision: 0,
         myBingoClaimedLineKeys: [],
         myBingoScore: 0,
         bingoRoundEndsAtEpochMs: null,
+        myBingoMarkedCells: [],
+        myTriviaVotes: {},
+        myQuoteVotes: {},
+        teamMcqSync,
         lobbyTeams: [],
       }),
     });
@@ -118,33 +172,89 @@ export async function setupApiMocks(
         contentType: "application/json",
         body: JSON.stringify({ error: "Unauthorized" }),
       });
-    } else {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          guestStep: getGuestStep(),
-          revision: 0,
-          scheduledGameStartsAtEpochMs: null,
-          teamMcqRoundIndex: 0,
-          teamMcqRoundStartedAtEpochMs: null,
-          games: [],
-          bingoSongOrder: [],
-          bingoCurrentSongIndex: 0,
-          bingoRoundEndsAtEpochMs: null,
-          players: Array.from({ length: getPlayerCount() }, (_, i) => ({
-            id: `player-${i}`,
-            nickname: `Player ${i}`,
-          })),
-          teams: [],
-          gameScores: {},
-          bingoClaimedLineKeysByPlayer: {},
-          bingoMarkedByPlayer: {},
-          triviaVotesByPlayer: {},
-          quoteVotesByPlayer: {},
-        }),
-      });
+      return;
     }
+
+    const step = getGuestStep();
+    const isCountdown = step.startsWith("countdown");
+    const fast = process.env.NICOLA_E2E_FAST_LOBBY === "1";
+    const countdownDurationMs = fast ? 2200 : 61000;
+
+    if (!isCountdown) {
+      countdownStartMs = null;
+    } else if (countdownStartMs == null) {
+      countdownStartMs = Date.now();
+    }
+
+    const scheduled = isCountdown && countdownStartMs != null
+      ? countdownStartMs + countdownDurationMs
+      : null;
+
+    let finalStep = step;
+    if (isCountdown && scheduled != null && Date.now() >= scheduled) {
+      const game = step.split("_")[1];
+      finalStep = `game_${game}`;
+    }
+
+    const currentGame =
+      finalStep === "game_trivia" || finalStep === "leaderboard_post_trivia"
+        ? GAMES[0]
+        : finalStep === "game_bingo" || finalStep === "leaderboard_post_bingo"
+        ? GAMES[1]
+        : finalStep === "game_quotes" || finalStep === "leaderboard_final"
+        ? GAMES[2]
+        : null;
+
+    const teamMcqSync =
+      finalStep === "game_trivia"
+        ? {
+            questionIndex: 0,
+            roundStartedAtEpochMs: Date.now() - 1000,
+            totalQuestions: TRIVIA_QUESTIONS.length,
+            answerMs: 15000,
+            revealMs: 2000,
+          }
+        : finalStep === "game_quotes"
+        ? {
+            questionIndex: 0,
+            roundStartedAtEpochMs: Date.now() - 1000,
+            totalQuestions: getQuoteQuestions().length,
+            answerMs: 15000,
+            revealMs: 2000,
+          }
+        : null;
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        guestStep: finalStep,
+        revision: 0,
+        scheduledGameStartsAtEpochMs: scheduled,
+        teamMcqRoundIndex: 0,
+        teamMcqRoundStartedAtEpochMs: null,
+        games: GAMES,
+        bingoSongOrder: [],
+        bingoCurrentSongIndex: 0,
+        bingoRoundEndsAtEpochMs: null,
+        players: Array.from({ length: getPlayerCount() }, (_, i) => ({
+          id: `player-${i}`,
+          nickname: `Player ${i}`,
+        })),
+        teams: [],
+        gameScores: {
+          [GAMES[0].id]: {},
+          [GAMES[1].id]: {},
+          [GAMES[2].id]: {},
+        },
+        bingoClaimedLineKeysByPlayer: {},
+        bingoMarkedByPlayer: {},
+        triviaVotesByPlayer: {},
+        quoteVotesByPlayer: {},
+        currentGame,
+        teamMcqSync,
+      }),
+    });
   });
 
   // Mock /api/admin/start-next

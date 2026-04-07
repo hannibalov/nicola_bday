@@ -4,12 +4,10 @@
 import { render, waitFor, act, screen } from "@testing-library/react";
 import PlayView from "./PlayView";
 
-let currentSearchParams = new URLSearchParams();
 const mockReplace = jest.fn();
 const mockRouter = { replace: mockReplace };
 jest.mock("next/navigation", () => ({
   useRouter: () => mockRouter,
-  useSearchParams: () => currentSearchParams,
 }));
 
 jest.mock("@/components/layout/GuestPlayShell", () => ({
@@ -74,7 +72,6 @@ let lastWebSocket: MockWebSocket | null = null;
 jest.setTimeout(30000);
 beforeEach(async () => {
   mockReplace.mockClear();
-  currentSearchParams = new URLSearchParams();
   fetchMock.mockReset();
   global.fetch = fetchMock as unknown as typeof fetch;
   lastWebSocket = null;
@@ -174,63 +171,6 @@ describe("PlayView", () => {
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/");
     });
-  });
-
-  it("when protocolTest=1, stale player redirect preserves test query string", async () => {
-    currentSearchParams = new URLSearchParams("protocolTest=1&nickname=Bot1");
-    fetchMock.mockImplementation((url: string | URL) => {
-      const u = typeof url === "string" ? url : url.toString();
-      if (u.includes("/api/session/clear-player-cookie")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ ok: true }),
-        } as Response);
-      }
-      if (u.includes("/api/state")) {
-        return Promise.resolve(makeStateResponse({ playerKnownToSession: false }));
-      }
-      return Promise.reject(new Error(`unexpected fetch ${u}`));
-    });
-
-    jest.useFakeTimers();
-    await act(async () => { render(<PlayView />); });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
-    // Wait for the poll (increased to 4s interval from 2s)
-    act(() => {
-      jest.advanceTimersByTime(4001);
-    });
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/?protocolTest=1&nickname=Bot1",
-      );
-    });
-    jest.useRealTimers();
-
-
-  });
-
-  it("with protocolTest=1 does not open WebSocket (HTTP/1.1 connection limit)", async () => {
-    const webSocketSpy = global.WebSocket as unknown as jest.Mock;
-    currentSearchParams = new URLSearchParams("protocolTest=1&nickname=T0");
-    fetchMock.mockImplementation((url: string | URL) => {
-      const u = typeof url === "string" ? url : url.toString();
-      if (u.includes("/api/state")) {
-        return Promise.resolve(makeStateResponse({ playerKnownToSession: true }));
-      }
-      return Promise.reject(new Error(`unexpected fetch ${u}`));
-    });
-    webSocketSpy.mockClear();
-
-    await act(async () => { render(<PlayView />); });
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
-    });
-    expect(webSocketSpy).not.toHaveBeenCalled();
   });
 
   it("WebSocket onmessage with same revision does NOT trigger a new fetchState", async () => {

@@ -67,7 +67,7 @@ describe("POST /api/game/trivia/vote", () => {
       method: "POST",
       json: async () => ({ questionId: TRIVIA_QUESTIONS[0].id, optionIndex: 0 }),
       headers: {
-        get: (name: string) => undefined,
+        get: () => undefined,
       },
     } as any);
     expect(res.status).toBe(401);

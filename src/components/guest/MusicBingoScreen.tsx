@@ -6,9 +6,9 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import { useSearchParams } from "next/navigation";
 import { Be_Vietnam_Pro, Epilogue } from "next/font/google";
 import PrimaryActionButton from "@/components/game/PrimaryActionButton";
 import { bingoCardTitlesForPlayer, bingoSeedForPlayer } from "@/lib/bingoCard";
@@ -18,7 +18,7 @@ import {
   BINGO_FULL_CARD_CLAIM_KEY,
   completedBingoLineKeys,
 } from "@/lib/bingoLine";
-import { getBingoLocal, getGuestPlayerIdForClient, setBingoLocal } from "@/lib/clientStorage";
+import { getBingoLocal, getPersistedPlayerId, setBingoLocal } from "@/lib/clientStorage";
 import { useGuestApiFetch } from "./useGuestApiFetch";
 
 const headline = Epilogue({
@@ -38,6 +38,8 @@ export type MusicBingoScreenProps = {
   myBingoScore: number;
   bingoRoundEndsAtEpochMs: number | null;
   myBingoMarkedCells: boolean[];
+  /** Refetch session after a successful mark/claim so score and marks stay aligned with the server. */
+  onBingoMutation?: () => void;
 };
 
 function markedToIndices(marked: boolean[]): number[] {
@@ -60,6 +62,7 @@ export default function MusicBingoScreen({
   myBingoScore,
   bingoRoundEndsAtEpochMs,
   myBingoMarkedCells,
+  onBingoMutation,
 }: MusicBingoScreenProps) {
   const fontBody = "var(--font-bingo-body), ui-sans-serif, system-ui";
   const fontHeadline = "var(--font-bingo-headline), ui-sans-serif, system-ui";
@@ -73,15 +76,25 @@ export default function MusicBingoScreen({
     () => new Set()
   );
   const [error, setError] = useState<string | null>(null);
+  const [penaltyHint, setPenaltyHint] = useState<string | null>(null);
+  /** Until parent refetches, show score returned by mark/claim so penalties and claims feel immediate. */
+  const [optimisticScore, setOptimisticScore] = useState<number | null>(null);
   const [tick, setTick] = useState(() => Date.now());
-  const searchParams = useSearchParams();
   const guestFetch = useGuestApiFetch();
+  const markedRef = useRef(marked);
+  markedRef.current = marked;
+
+  useEffect(() => {
+    setOptimisticScore(null);
+  }, [myBingoScore]);
+
+  const displayScore = optimisticScore ?? myBingoScore;
 
   useLayoutEffect(() => {
     startTransition(() => {
-      setPlayerId(getGuestPlayerIdForClient(searchParams));
+      setPlayerId(getPersistedPlayerId());
     });
-  }, [searchParams]);
+  }, []);
 
   const titles = useMemo(
     () => (playerId ? bingoCardTitlesForPlayer(playerId) : []),
@@ -143,7 +156,7 @@ export default function MusicBingoScreen({
   const toggleCell = useCallback(
     async (index: number) => {
       if (playerId == null) return;
-      const nextMark = !marked[index];
+      const nextMark = !markedRef.current[index];
       setPendingMarkCells((s) => new Set(s).add(index));
       setError(null);
       try {
@@ -175,6 +188,23 @@ export default function MusicBingoScreen({
             setMarked(next);
           }
         }
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "score" in data &&
+          typeof (data as { score: unknown }).score === "number"
+        ) {
+          setOptimisticScore((data as { score: number }).score);
+        }
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          (data as { wrongTapPenalty?: unknown }).wrongTapPenalty === true
+        ) {
+          setPenaltyHint("Wrong tile — not the song playing (−5 pts).");
+          window.setTimeout(() => setPenaltyHint(null), 2800);
+        }
+        onBingoMutation?.();
       } finally {
         setPendingMarkCells((s) => {
           const next = new Set(s);
@@ -183,7 +213,7 @@ export default function MusicBingoScreen({
         });
       }
     },
-    [guestFetch, marked, playerId]
+    [guestFetch, onBingoMutation, playerId]
   );
 
   const onClaim = useCallback(async () => {
@@ -206,11 +236,19 @@ export default function MusicBingoScreen({
             ? (data as { error: string }).error
             : "Could not claim bingo";
         setError(msg);
+      } else if (
+        typeof data === "object" &&
+        data !== null &&
+        "totalForPlayer" in data &&
+        typeof (data as { totalForPlayer: unknown }).totalForPlayer === "number"
+      ) {
+        setOptimisticScore((data as { totalForPlayer: number }).totalForPlayer);
+        onBingoMutation?.();
       }
     } finally {
       setSubmitting(false);
     }
-  }, [guestFetch, newLineKeys, submitting]);
+  }, [guestFetch, newLineKeys, onBingoMutation, submitting]);
 
   if (!playerId) {
     return (
@@ -295,8 +333,17 @@ export default function MusicBingoScreen({
           className="mt-4 text-sm font-bold text-[#0e666a]"
           style={{ fontFamily: fontHeadline }}
         >
-          Your score this round: {myBingoScore}
+          Your score this round: {displayScore}
         </p>
+        {penaltyHint ? (
+          <p
+            className="mt-2 text-xs font-semibold text-[#b02500]/90"
+            style={{ fontFamily: fontHeadline }}
+            role="status"
+          >
+            {penaltyHint}
+          </p>
+        ) : null}
       </header>
 
       <section
@@ -319,7 +366,7 @@ export default function MusicBingoScreen({
                 data-test-id={`bingo-cell-${index}`}
                 disabled={busy}
                 onClick={() => void toggleCell(index)}
-                className={`min-h-[100px] rounded-2xl border-2 px-2 py-3 text-left text-sm font-bold leading-snug transition-all active:scale-[0.98] sm:min-h-[120px] sm:text-base ${
+                className={`min-h-[100px] touch-manipulation rounded-2xl border-2 px-2 py-3 text-left text-sm font-bold leading-snug transition-all active:scale-[0.98] sm:min-h-[120px] sm:text-base ${
                   isOn
                     ? "border-[#0e666a] bg-[#a6eff3]/50 text-[#005b5f] shadow-inner"
                     : "border-[#e5dcc9] bg-[#fef6e7]/90 text-[#322e25] hover:border-[#a33700]/40"

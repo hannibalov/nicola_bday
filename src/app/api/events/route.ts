@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { formatSseData } from "@/lib/sseFormat";
-import { getPublicState, getSessionState } from "@/lib/store";
+import { getPublicState } from "@/lib/store";
 import { resolvePlayerIdFromRequest } from "@/lib/requestPlayer";
 import type { SessionState, PublicState } from "@/types";
 
@@ -31,6 +31,38 @@ type SessionEventPayload = {
   playerCount: number;
   fullState?: PublicState;
 };
+
+/** Supabase Realtime `.on("postgres_changes", …)` is not typed for generic tables in edge builds. */
+type PostgresChangesFilter = {
+  event: string;
+  schema: string;
+  table: string;
+  filter?: string;
+};
+
+type PostgresChangePayload = { new: unknown };
+
+type PostgresRealtimeChannel = {
+  on(
+    event: "postgres_changes",
+    filter: PostgresChangesFilter,
+    callback: (payload: PostgresChangePayload) => void | Promise<void>,
+  ): PostgresRealtimeChannel;
+  subscribe(): Promise<string>;
+};
+
+function channelForPostgres(name: string): PostgresRealtimeChannel {
+  return supabase.channel(name) as unknown as PostgresRealtimeChannel;
+}
+
+/** Supabase reuses `channel(name)`; a second SSE/WS connection must not `.on()` after the first subscribed. */
+function uniqueRealtimeChannelPair() {
+  const id = crypto.randomUUID();
+  return {
+    session: `session_updates:${id}`,
+    players: `player_updates:${id}`,
+  };
+}
 
 export async function GET(request?: Request) {
   const req = request ?? new Request("http://localhost/api/events");
@@ -69,20 +101,20 @@ async function handleWebSocket(request: Request) {
 
   server.send(JSON.stringify(await ensurePayload(request, initial)));
 
-  const sessionChannel = supabase.channel("session_updates")
-    .on(
-      "postgres_changes" as any,
-      { event: "UPDATE", schema: "public", table: "session", filter: "id=eq.1" } as any,
-      (async (payload: { new: SessionRow | null }) => {
-        const newData = payload.new;
-        if (!newData) return;
-        try {
-          server.send(JSON.stringify(await ensurePayload(request, newData)));
-        } catch {
-          // Handle error
-        }
-      }) as any
-    ) as any;
+  const channels = uniqueRealtimeChannelPair();
+  const sessionChannel = channelForPostgres(channels.session).on(
+    "postgres_changes",
+    { event: "UPDATE", schema: "public", table: "session", filter: "id=eq.1" },
+    async (payload) => {
+      const newData = payload.new as SessionRow | null;
+      if (!newData) return;
+      try {
+        server.send(JSON.stringify(await ensurePayload(request, newData)));
+      } catch {
+        // Handle error
+      }
+    },
+  );
 
   const sessionStatus = await sessionChannel.subscribe();
   if (sessionStatus !== 'SUBSCRIBED') {
@@ -90,18 +122,17 @@ async function handleWebSocket(request: Request) {
     return new Response(null, { status: 500 });
   }
 
-  const playerChannel = supabase.channel("player_updates")
-    .on(
-      "postgres_changes" as any,
-      { event: "INSERT", schema: "public", table: "players" } as any,
-      (async () => {
-        try {
-          server.send(JSON.stringify(await ensurePayload(request, null)));
-        } catch {
-          // Handle error
-        }
-      }) as any
-    ) as any;
+  const playerChannel = channelForPostgres(channels.players).on(
+    "postgres_changes",
+    { event: "INSERT", schema: "public", table: "players" },
+    async () => {
+      try {
+        server.send(JSON.stringify(await ensurePayload(request, null)));
+      } catch {
+        // Handle error
+      }
+    },
+  );
 
   const playerStatus = await playerChannel.subscribe();
   if (playerStatus !== 'SUBSCRIBED') {
@@ -137,24 +168,24 @@ async function handleSSE(request: Request) {
         )
       );
 
-      const sessionChannel = supabase.channel("session_updates")
-        .on(
-          "postgres_changes" as any,
-          { event: "UPDATE", schema: "public", table: "session", filter: "id=eq.1" } as any,
-          (async (payload: { new: SessionRow | null }) => {
-            const newData = payload.new;
-            if (!newData) return;
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  formatSseData(await ensurePayload(request, newData))
-                )
-              );
-            } catch {
-              // Handle error
-            }
-          }) as any
-        ) as any;
+      const channels = uniqueRealtimeChannelPair();
+      const sessionChannel = channelForPostgres(channels.session).on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "session", filter: "id=eq.1" },
+        async (payload) => {
+          const newData = payload.new as SessionRow | null;
+          if (!newData) return;
+          try {
+            controller.enqueue(
+              encoder.encode(
+                formatSseData(await ensurePayload(request, newData))
+              )
+            );
+          } catch {
+            // Handle error
+          }
+        },
+      );
 
       const sessionStatus = await sessionChannel.subscribe();
       if (sessionStatus !== 'SUBSCRIBED') {
@@ -162,22 +193,21 @@ async function handleSSE(request: Request) {
         return;
       }
 
-      const playerChannel = supabase.channel("player_updates")
-        .on(
-          "postgres_changes" as any,
-          { event: "INSERT", schema: "public", table: "players" } as any,
-          (async () => {
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  formatSseData(await ensurePayload(request, null))
-                )
-              );
-            } catch {
-              // Handle error
-            }
-          }) as any
-        ) as any;
+      const playerChannel = channelForPostgres(channels.players).on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "players" },
+        async () => {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                formatSseData(await ensurePayload(request, null))
+              )
+            );
+          } catch {
+            // Handle error
+          }
+        },
+      );
 
       const playerStatus = await playerChannel.subscribe();
       if (playerStatus !== 'SUBSCRIBED') {

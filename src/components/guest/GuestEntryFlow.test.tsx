@@ -1,21 +1,16 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import GuestEntryFlow from "./GuestEntryFlow";
 import { KEYS } from "@/lib/clientStorage";
-import { partyProtocolUnlockEpochMs } from "@/lib/partyProtocolGate";
 
 const mockPrefetch = jest.fn();
-const mockSearchParams = jest.fn(() => new URLSearchParams());
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: mockPrefetch }),
-  useSearchParams: () => mockSearchParams(),
 }));
 
 describe("GuestEntryFlow", () => {
-  jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+  beforeEach(() => {
     mockPrefetch.mockClear();
-    mockSearchParams.mockImplementation(() => new URLSearchParams());
     localStorage.clear();
   });
 
@@ -32,23 +27,16 @@ jest.setTimeout(30000); beforeEach(async () => {
     });
   });
 
-  it("does not prefetch /play while party protocol gate is shown", () => {
-    jest.useFakeTimers({ now: partyProtocolUnlockEpochMs() - 60_000 });
+  it("does not prefetch /play while party protocol screen is shown", () => {
     render(<GuestEntryFlow />);
     expect(mockPrefetch).not.toHaveBeenCalled();
-    jest.useRealTimers();
   });
 
-  it("prefetches /play after completing party protocol with bypass", async () => {
-    mockSearchParams.mockImplementation(
-      () => new URLSearchParams("protocolTest=1")
-    );
-    jest.useFakeTimers({ now: partyProtocolUnlockEpochMs() - 60_000 });
+  it("prefetches /play after completing party protocol", async () => {
     render(<GuestEntryFlow />);
     fireEvent.click(screen.getByRole("button", { name: /let's party/i }));
     await waitFor(() => {
-      expect(mockPrefetch).toHaveBeenCalledWith("/play?protocolTest=1");
+      expect(mockPrefetch).toHaveBeenCalledWith("/play");
     });
-    jest.useRealTimers();
   });
 });

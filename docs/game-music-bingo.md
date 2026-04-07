@@ -23,7 +23,7 @@
 
 ## Round timer
 
-- **`bingoRoundEndsAtEpochMs`** is set when entering `game_bingo` to **now + 15 minutes** (`BINGO_ROUND_DURATION_MS` in [`bingoRound.ts`](../src/lib/bingoRound.ts)).
+- **`bingoRoundEndsAtEpochMs`** is set when entering `game_bingo` to **now + 20 minutes** (`BINGO_ROUND_DURATION_MS` in [`bingoRound.ts`](../src/lib/bingoRound.ts)).
 - [`applyDueBingoRoundEnd`](../src/lib/store.ts) runs on the same read paths as other “due” transitions. When time has passed, the session advances to **`leaderboard_post_bingo`** and **`recordRoundScoresForCompletedGame(1)`** snapshots per-player bingo scores (including negative totals from wrong taps).
 
 ---

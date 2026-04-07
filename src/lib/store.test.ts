@@ -675,7 +675,6 @@ describe("store", () => {
 
       await advanceUntil("leaderboard_final");
 
-      const state = await getSessionState();
       const pub = await getPublicState(ids[0]);
       const finalLeaderboard = pub.finalLeaderboard;
 

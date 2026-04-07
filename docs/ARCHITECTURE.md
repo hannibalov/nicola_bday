@@ -13,7 +13,7 @@ Mobile-first web app for a birthday party: **no authentication**, **Supabase for
 - **Guest (player):** joins with a quirky nickname, reads party info, waits for the host, then plays games in sequence with updates when the host advances the session.
 - **Admin (host):** opens a protected panel, sees how many players are connected, and advances the **global guest step** so every device stays aligned.
 
-**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state; **WebSocket** push session changes with **SSE/polling fallback** if the connection fails. The event stream carries minimal sync metadata, while `/api/state` remains the canonical full-state refresh path. State is persisted in **Supabase** to ensure consistency across Vercel serverless instances.
+**Connectivity constraints:** Poor network is expected. **localStorage** backs up identity and game-local state. Clients subscribe to session changes via **`GET /api/events`**: **WebSocket** is the primary transport, with **SSE** and **adaptive polling** as fallbacks if the socket or stream fails. The push payload carries minimal sync metadata (`revision`, `guestStep`, `playerCount`); guests refetch **`GET /api/state`** and the host refetches **`GET /api/admin/state`** for full payloads. State is persisted in **Supabase** so multiple Vercel instances stay consistent.
 
 ---
 
@@ -21,15 +21,15 @@ Mobile-first web app for a birthday party: **no authentication**, **Supabase for
 
 | Step | Screen / phase | Team vs individual | Notes |
 |------|----------------|-------------------|--------|
-| 1 | Guest check-in | — | Ask for **quirky nicknames**, not real names. |
-| 2 | Party protocol / theme | — | Visible **only after** check-in. |
-| 3 | Lobby (game 1) | Team (trivia) | After 1+2 **and** admin advances to trivia lobby; **instructions** and **roster per team**. |
-| 4 | Game 1: Trivia | Team | Admin starts game. **20** questions, **4** options. Topics: **UK**, **1970s**, **Barcelona**. **50** points per correct answer per question for **each** team member when the team’s **majority** choice is correct. |
+| 1 | Party protocol / theme | — | On **`/`**, before check-in, until the guest completes it (localStorage). Venue, dress theme, countdown to party start; **Let’s party** is always tappable. |
+| 2 | Guest check-in | — | Quirky nickname on **`/`**; `POST /api/players`; then **`/play`**. |
+| 3 | Lobby (game 1) | Team (trivia) | After steps 1–2 **and** admin advances to trivia lobby; **instructions** and **roster per team**. |
+| 4 | Game 1: Trivia | Team | Admin starts game. **20** questions, **4** options; **15 s** synchronized answer window per question. Topics: **UK**, **1970s**, **Barcelona**. **50** points per correct answer per question for **each** team member when the team’s **majority** choice is correct. |
 | 5 | Leaderboard | — | After trivia. |
 | 6 | Lobby (game 2) | Individual | Reuse lobby UI; music bingo copy. |
-| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **50** 1970s songs; host-driven play order + **15 min** auto-finish to leaderboard. **50** / **100** / **500** pts column / row / full card; wrong tile **−5**; `POST /api/game/bingo/mark` + `POST /api/game/bingo/claim`. |
+| 7 | Game 2: Music bingo | Individual | Random **2×3** card (**6** cells), **50** 1970s songs; host-driven play order + **20 min** auto-finish to leaderboard. **50** / **100** / **500** pts column / row / full card; wrong tile **−5**; `POST /api/game/bingo/mark` + `POST /api/game/bingo/claim`. |
 | 8 | Leaderboard | — | After bingo. |
-| 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each, **50** points per correct team answer (same majority rule). |
+| 9 | Game 3: Who said it | Team | **New random teams** (rebuilt when entering quote countdown). **All** quotes in `quoteQuestions.json`, **4** options each; **15 s** answer window per question (same sync model as trivia). **50** points per correct team answer (same majority rule). |
 | 10 | Leaderboard | — | Final standings (`leaderboard_final`). |
 
 ### 2.1 Party protocol — theme & dress (`party_protocol`)
@@ -51,6 +51,8 @@ Mobile-first web app for a birthday party: **no authentication**, **Supabase for
 | Wrath    | Stern, black, angry           |
 
 **Note:** The theme is a bit of dress-up fun; if it stresses you out, skip it.
+
+**Party protocol UI:** The continue control (**Let’s party**) is always available (no calendar lock). Completing the screen sets `nicola-bday:party-protocol-complete` so returning guests skip straight to nickname check-in.
 
 **Admin:** Sees connected players and drives the **global step** via **Start next** (and optional **Reset**).
 
@@ -83,10 +85,10 @@ The repository implements the **full guest sequence** above: real trivia, music 
 
 | Route | Purpose |
 |-------|---------|
-| `/` | `guest/GuestEntryFlow` → `NicknameForm` — quirky-alias copy; `POST /api/players`; persists `playerId` + nickname via `persistPlayerProfile()`; redirects to `/play`. |
+| `/` | `guest/GuestEntryFlow`: **`PartyProtocolScreen`** until the guest completes it (localStorage), then **`NicknameForm`**; `POST /api/players`; `persistPlayerProfile()`; `router.push("/play")`. |
 | `/play` | `guest/PlayPageContent` requires persisted `playerId` (cookie and/or localStorage), then `guest/PlayView`. |
-| `/admin` | `admin/AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); WebSocket + SSE/poll fallback; **Start next** and **Reset session**. |
-| `/join` | Dev/QA shortcut: redirects to `/?protocolTest=1` (unlocks protocol CTA for testing). |
+| `/admin` | `admin/AdminPanel` — `?key=` or typed admin key (`x-admin-key` header); **WebSocket** to `/api/events` (always attempted), then SSE/poll fallback; **Start next** and **Reset session**. |
+| `/join` | Shortcut: redirects to `/` (same as home check-in). |
 
 ### 5.2 API
 
@@ -94,7 +96,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 |---------------|------|
 | `POST /api/players` | Register nickname; response includes `playerId`; **httpOnly `playerId` cookie** set by server. |
 | `GET /api/state` | **`PublicState`** for the current cookie’s player: `guestStep`, revision, game, teams/lobby, leaderboards, vote snapshots; during bingo, `myBingoMarkedCells`, `myBingoClaimedLineKeys`, `myBingoScore`, `bingoRoundEndsAtEpochMs`. |
-| `GET /api/events` | **WebSocket** (primary) with **SSE** (`text/event-stream`) fallback: pushes `revision`, `guestStep`, and `playerCount` on change; initial event on connect. Clients refresh `/api/state` as needed to fetch the full session payload. |
+| `GET /api/events` | **WebSocket** upgrade (primary) or **SSE** (`text/event-stream`): pushes JSON with `revision`, `guestStep`, `playerCount` (and optionally `fullState`) on change. Guests follow with **`GET /api/state`**; admin UI with **`GET /api/admin/state`**. |
 | `POST /api/game/trivia/vote` | Submit trivia option per question (active in `game_trivia` only). |
 | `POST /api/game/quotes/vote` | Submit quote option per question (active in `game_quotes` only). |
 | `POST /api/game/bingo/mark` | Toggle a cell vs. server “now playing” title; apply **−5** if the tile does not match. |
@@ -104,7 +106,22 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | `POST /api/admin/start-next` | Advances **`guestStep`** to the next step in `GUEST_STEP_SEQUENCE`; runs transition side effects (teams, scores, countdown seed). |
 | `POST /api/admin/reset` | Clears session to initial `party_protocol` state. |
 
-**Real-time:** `PlayView` and `AdminPanel` open **WebSocket** connection to `/api/events` and use message payloads as update notifications; when a pushed revision or guest step changes, the client refetches `/api/state` for the full session state. On error they close the connection and fall back to SSE or polling (adaptive interval). The WebSocket implementation uses Supabase realtime subscriptions, allowing it to work reliably across multiple Vercel Lambda instances.
+**Real-time (see also [§5.2.1](#521-client-transport-sessionSyncTransport)):** `PlayView` and `AdminPanel` connect to **`/api/events`**. Payloads update local revision/step/player count; guests refetch **`/api/state`**, the host refetches **`/api/admin/state`**. The route uses **Supabase Realtime** so pushes work across serverless instances.
+
+<a id="521-client-transport-sessionSyncTransport"></a>
+
+### 5.2.1 Client transport (`src/lib/sessionSyncTransport.ts`)
+
+| Role | Primary | Notes |
+|------|---------|--------|
+| **Guest `PlayView`** | WebSocket to `/api/events` | If `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`, the guest **skips WebSocket** and uses **adaptive polling** only (used in Playwright; see `playwright.config.ts`). |
+| **Admin `AdminPanel`** | WebSocket to `/api/events` | **Always** tries WebSocket first; the guest-only env flag does **not** disable admin WebSocket. |
+
+**Fallback chain (both apps):** WebSocket → on failure, **EventSource** (SSE) to the same path → on error or if SSE is unavailable/disabled, **adaptive polling**. When `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`, the SSE branch is skipped and fallback goes straight to polling.
+
+**Helpers:** `shouldGuestPlayViewUseWebSocket()`, `shouldAdminPanelUseWebSocket()` (always `true`), `parseWebSocketPayload()` for JSON messages (shared with SSE `data:` lines).
+
+**Guest HTTP:** `src/lib/guestFetch.ts` wraps `fetch` with `credentials: "include"` for cookie-authenticated APIs.
 
 <a id="server-state"></a>
 
@@ -116,8 +133,8 @@ The repository implements the **full guest sequence** above: real trivia, music 
 - **Teams:** `rebuildTeams()` runs when entering **`lobby_trivia`** and again when entering **`countdown_quotes`** so quote teams are **independent** from trivia teams. Chunk size **7** players per team (`Team 1`, …).
 - **Games:** `src/lib/gameConfig.ts` — three games: team trivia, music bingo, team quotes (`GAMES[0]…[2]`).
 - **Scoring:**
-  - Trivia & quotes: `computeTriviaScoresFromVotes` + `majorityVote` / `teamChoiceMatchesCorrect` — **50** points per question when the team majority matches `correctIndex`; plurality tie-break uses **lower option index** (`pluralityWinner`).
-  - Bingo: shuffled `bingoSongOrder`, **15 min** `bingoRoundEndsAtEpochMs` → auto `leaderboard_post_bingo`; `markBingoCell` vs. current title; `claimBingo` adds **50** / **100** / **500** per new column / row / `full` (all cells marked on server).
+  - Trivia & quotes: `computeTriviaScoresFromVotes` + `majorityVote` / `teamChoiceMatchesCorrect` — **50** points per question when the team majority matches `correctIndex`; plurality tie-break uses **lower option index** (`pluralityWinner`). Per-question **15 s** answer + **3 s** reveal use `TEAM_MCQ_ANSWER_MS` / `TEAM_MCQ_REVEAL_MS` in `teamMcqTiming.ts` (shortened under `NICOLA_E2E_FAST_LOBBY`).
+  - Bingo: shuffled `bingoSongOrder`, **20 min** `bingoRoundEndsAtEpochMs` → auto `leaderboard_post_bingo`; `markBingoCell` vs. current title; `claimBingo` adds **50** / **100** / **500** per new column / row / `full` (all cells marked on server).
   - Round scores persisted when entering each leaderboard / final step via `recordRoundScoresForCompletedGame`.
 - **Revision:** Incremented on advancing step, bingo marks, bingo claims, and host “next song”; exposed to clients for sync.
 - **Countdown:** `countdownRemaining` is set when **entering** a `countdown_*` step; the **UI** (`CountdownScreen`) runs a local ticking timer. The server does **not** auto-advance when it hits zero — the **host** advances to the game step. (Product copy can still say “get ready”; technically it is host-gated.)
@@ -137,7 +154,7 @@ The repository implements the **full guest sequence** above: real trivia, music 
 | Cookie `playerId` | Set by server on register. |
 | localStorage `nicola-bday:playerId` / `nickname` | Mirror for recovery; `getPersistedPlayerId()` merges cookie + LS. |
 | `nicola-bday:lastKnownStep` | `{ step, revision, at }` on each `/api/state` sync. |
-| `nicola-bday:party-protocol-complete` | Gates repeating party protocol after refresh. |
+| `nicola-bday:party-protocol-complete` | After first completion on `/`, skip protocol and show nickname check-in. |
 | `nicola-bday:triviaAnswers`, `nicola-bday:bingo`, `nicola-bday:quoteVotes` | Offline / refresh resilience for game UIs (see game briefs). |
 
 ### 5.6 UI components (high level)
@@ -195,8 +212,8 @@ localStorage keys are centralized in `clientStorage.ts`. On load: hydrate from l
 
 **Production HTTP cache:** [`next.config.ts`](../next.config.ts) sets long-lived `Cache-Control` in **production** only for `/_next/static/*` (immutable, fingerprinted assets) and `/images/*` so repeat visits and reloads reuse JS/CSS/fonts and party images without hammering the origin.
 
-- Today: The `/api/events` handler uses Supabase realtime subscriptions for session and player updates, sending JSON over WebSocket or SSE. If the WebSocket upgrade fails, the client can fall back to SSE; if the stream closes, the UI falls back to polling.
-- Benefit: This works across any number of serverless instances without needing a separate Pub/Sub service like Redis.
+- **`/api/events`** uses Supabase Realtime for session and player updates, emitting JSON over WebSocket or SSE. Clients fall back through SSE and then polling; **guests** running with `NEXT_PUBLIC_NICOLA_DISABLE_SSE=1` (e.g. E2E) poll without opening a socket.
+- Benefit: Works across many serverless instances without a separate Pub/Sub service (e.g. Redis).
 
 ### 7.4 Team majority voting
 
@@ -215,7 +232,7 @@ src/
   app/
     page.tsx                    # Guest check-in (guest/GuestEntryFlow)
     layout.tsx
-    join/page.tsx               # redirect → /?protocolTest=1
+    join/page.tsx               # redirect → /
     play/page.tsx               # guest/PlayPageContent → guest/PlayView
     admin/page.tsx              # admin/AdminPanel
     api/
@@ -237,7 +254,7 @@ src/
       MobileLayout.tsx
       GuestPlayShell.tsx
     guest/
-      GuestEntryFlow.tsx        # home: nickname → party protocol
+      GuestEntryFlow.tsx        # home: party protocol → nickname check-in
       NicknameForm.tsx
       PlayPageContent.tsx
       PlayView.tsx
@@ -267,6 +284,8 @@ src/
     sessionNotify.ts
     sseFormat.ts
     clientStorage.ts
+    guestFetch.ts
+    sessionSyncTransport.ts
     bingoLine.ts
     bingoCard.ts
     bingoRound.ts
@@ -294,7 +313,7 @@ Detailed briefs for parallel work. **Each brief includes mandatory `## TDD (requ
 | [screen-leaderboard.md](./screen-leaderboard.md) | Leaderboard between rounds |
 | [screen-admin.md](./screen-admin.md) | Host control panel |
 | [game-trivia-team.md](./game-trivia-team.md) | Team trivia (majority, scoring) |
-| [game-music-bingo.md](./game-music-bingo.md) | Music bingo: 50-title pool, host playlist, marks/claims, 15 min round, scoring |
+| [game-music-bingo.md](./game-music-bingo.md) | Music bingo: 50-title pool, host playlist, marks/claims, 20 min round, scoring |
 | [game-identify-quote-team.md](./game-identify-quote-team.md) | Team quotes + new teams |
 | [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) | Normalized database structure & SQL |
 
@@ -302,9 +321,19 @@ Detailed briefs for parallel work. **Each brief includes mandatory `## TDD (requ
 
 ## 10. Environment
 
+### Required (runtime)
+
 - **`ADMIN_SECRET`** — protects admin API and panel (default `admin-secret`).
-- **`NEXT_PUBLIC_SUPABASE_URL`** — your Supabase project URL.
-- **`SUPABASE_SECRET_KEY`** — your Supabase **service_role** key (bypasses RLS).
+- **`NEXT_PUBLIC_SUPABASE_URL`** — Supabase project URL (client + server).
+- **`SUPABASE_SECRET_KEY`** — Supabase **service_role** key (bypasses RLS).
+
+### Optional / tooling
+
+| Variable | Purpose |
+|----------|---------|
+| **`NEXT_PUBLIC_NICOLA_DISABLE_SSE=1`** | Guest **`PlayView`** only: do not open WebSocket; use polling. SSE fallback is also skipped when falling back from a failed socket. **Admin** still uses WebSocket first. Set in Playwright `webServer.env` for stable E2E. |
+| **`NICOLA_E2E_FAST_LOBBY=1`** | Shortens lobby and team-MCQ timers (Playwright / integration tests). |
+| **`NICOLA_PROTOCOL_TEST_API=1`** | Server: honor **`x-nicola-player-id`** over the `playerId` cookie (multi-tab API testing). In **`development`** / **`test`**, the header is already accepted without this flag. |
 
 ---
 
@@ -378,8 +407,8 @@ Goal: **one implementation** for patterns that appear on multiple flows. Game-sp
 | Piece | Path | Reuse |
 |-------|------|--------|
 | Mobile shell | `layout/MobileLayout.tsx`, `layout/GuestPlayShell.tsx` | Guest full-screen chrome. |
-| Play orchestration | `guest/PlayView.tsx` | Single place for fetch + SSE + `guestStep` routing. |
-| Party protocol | `guest/PartyProtocolScreen.tsx` | Post-check-in theme/rules. |
+| Play orchestration | `guest/PlayView.tsx` | `/api/state`, WebSocket/SSE/poll sync, `guestStep` routing. |
+| Party protocol | `guest/PartyProtocolScreen.tsx` | Theme, venue, countdown; continue always enabled. |
 | Lobby | `guest/LobbyScreen.tsx` | `variant`: `trivia` \| `music_bingo`; trivia shows `teams` roster. |
 | Countdown | `guest/CountdownScreen.tsx` | Game name, team list, local timer display. |
 | Trivia / quotes | `guest/TriviaGameScreen.tsx`, `guest/IdentifyQuoteGameScreen.tsx` | MCQ flows using shared game components. |

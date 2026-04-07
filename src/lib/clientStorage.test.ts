@@ -3,7 +3,6 @@
  */
 import {
   KEYS,
-  KEYS_PT,
   STORAGE_PREFIX,
   getLastKnownStep,
   getBingoLocal,
@@ -19,14 +18,13 @@ import {
   getTriviaAnswersLocal,
   setTriviaAnswersLocal,
   clearGuestRegistrationForRejoin,
-  persistGuestProfile,
-  getGuestPlayerIdForClient,
-  getGuestNicknameForClient,
 } from "./clientStorage";
 
+const LEGACY_PT_PLAYER_ID = `${STORAGE_PREFIX}pt-playerId`;
+const LEGACY_PT_NICKNAME = `${STORAGE_PREFIX}pt-nickname`;
+
 describe("clientStorage", () => {
-  jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+  beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     document.cookie = "playerId=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
@@ -100,33 +98,10 @@ jest.setTimeout(30000); beforeEach(async () => {
     expect(window.localStorage.getItem(KEYS.triviaAnswers)).toContain("t1");
   });
 
-  it("persistGuestProfile protocol-test mode uses sessionStorage not localStorage", () => {
-    persistGuestProfile(
-      { playerId: "pt1", nickname: "T1" },
-      true,
-    );
-    expect(sessionStorage.getItem(KEYS_PT.playerId)).toBe("pt1");
-    expect(sessionStorage.getItem(KEYS_PT.nickname)).toBe("T1");
-    expect(window.localStorage.getItem(KEYS.playerId)).toBeNull();
-  });
-
-  it("getGuestPlayerIdForClient uses session profile when protocolTest and nickname match", () => {
-    persistGuestProfile({ playerId: "x", nickname: "A" }, true);
-    const sp = new URLSearchParams("protocolTest=1&nickname=A");
-    expect(getGuestPlayerIdForClient(sp)).toBe("x");
-    expect(getGuestNicknameForClient(sp)).toBe("A");
-  });
-
-  it("getGuestPlayerIdForClient returns null when protocol nickname mismatches session", () => {
-    persistGuestProfile({ playerId: "x", nickname: "A" }, true);
-    const sp = new URLSearchParams("protocolTest=1&nickname=B");
-    expect(getGuestPlayerIdForClient(sp)).toBeNull();
-  });
-
   it("clearGuestRegistrationForRejoin removes identity and game keys", () => {
     persistPlayerProfile({ playerId: "p1", nickname: "N" });
-    sessionStorage.setItem(KEYS_PT.playerId, "pt");
-    sessionStorage.setItem(KEYS_PT.nickname, "Pt");
+    sessionStorage.setItem(LEGACY_PT_PLAYER_ID, "pt");
+    sessionStorage.setItem(LEGACY_PT_NICKNAME, "Pt");
     markPartyProtocolComplete();
     setLastKnownStep("game_trivia", 1);
     setTriviaAnswersLocal({ q: 0 });
@@ -147,8 +122,8 @@ jest.setTimeout(30000); beforeEach(async () => {
     expect(getTriviaAnswersLocal()).toBeNull();
     expect(getBingoLocal()).toBeNull();
     expect(window.localStorage.getItem(KEYS.quoteVotes)).toBeNull();
-    expect(sessionStorage.getItem(KEYS_PT.playerId)).toBeNull();
-    expect(sessionStorage.getItem(KEYS_PT.nickname)).toBeNull();
+    expect(sessionStorage.getItem(LEGACY_PT_PLAYER_ID)).toBeNull();
+    expect(sessionStorage.getItem(LEGACY_PT_NICKNAME)).toBeNull();
   });
 
   it("markPartyProtocolComplete does not throw when setItem fails", () => {

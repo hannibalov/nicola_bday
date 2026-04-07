@@ -8,17 +8,18 @@
 
 ## Rules (from product)
 
-- **10** multiple-choice questions, **4** options each.
+- **20** multiple-choice questions, **4** options each.
 - Topics: **United Kingdom** facts, **1970s** culture/history, **Barcelona**.
+- **Synchronized rounds:** **15 s** to answer per question, then **3 s** reveal of the correct option for everyone. Constants: `TEAM_MCQ_ANSWER_MS` and `TEAM_MCQ_REVEAL_MS` in [`src/lib/teamMcqTiming.ts`](../src/lib/teamMcqTiming.ts). With `NICOLA_E2E_FAST_LOBBY=1` (Playwright), intervals shorten like lobby timing.
 - **50 points** per correct answer for the **team** — applied as **the same total to every player on that team** for the round (each member gets the team score for that question; **do not** split team score as an average unless product changes).
 - **Team answer resolution:** Each player taps an option on their phone. The option with the **most votes within the team** becomes the team’s official answer for that question. **Explain this prominently** in instructions and lobby (see `screen-lobby.md`).
-- **Tie-breaking:** Not specified by product — choose one and document (e.g. no points, random, or “smallest option index wins”).
+- **Tie-breaking:** Plurality ties use **lower option index** as the team choice (`pluralityWinner` in [`src/lib/majorityVote.ts`](../src/lib/majorityVote.ts)); document in UI if you surface tie behavior.
 
 ---
 
 ## Content
 
-- Ship as static data: `src/lib/content/triviaQuestions.ts` or `trivia.json` with shape:
+- Ship as static data: [`src/content/trivia.ts`](../src/content/trivia.ts) exports `TRIVIA_QUESTIONS` (currently **20** items) with shape:
 
 ```ts
 type TriviaQuestion = {
@@ -29,8 +30,6 @@ type TriviaQuestion = {
   // optional: topic tag for UI badges
 };
 ```
-
-- Exactly **10** items mixing the three themes.
 
 ---
 
@@ -44,19 +43,17 @@ type TriviaQuestion = {
 
 ## Server behavior
 
-- When admin starts a question window or ends it, compute per team:
-  1. Count votes per option index.
-  2. Winning index = max count.
-  3. If winning index === `correctIndex`, each player on team gets **+50** for that question (or team accumulator then flush at end — equivalent if totals match).
-- At game end, persist scores under `gameScores['trivia']` keyed by **playerId** (preferred for final totals) even if internal resolution is team-majority.
+- Votes arrive via `POST /api/game/trivia/vote` during `game_trivia`. After the round, scoring uses `computeTriviaScoresFromVotes` / team majority (same shape as quotes).
+- Per team: count votes per option index → plurality winner (tie → lower index) → if winner === `correctIndex`, each player on that team gets **+50** for that question.
+- At game end, persist scores under the trivia game id in `gameScores` keyed by **playerId** (see [`src/lib/store.ts`](../src/lib/store.ts) and [`src/lib/gameConfig.ts`](../src/lib/gameConfig.ts)).
 
 ---
 
 ## Current codebase
 
-- `MockGameScreen` placeholder in `PlayView` when `phase === 'game'`.
-- `recordMockScores()` assigns random scores — **replace**.
-- Teams formed in `formTeams()` once; trivia is **game 1** in target flow — ensure team formation timing matches **lobby for trivia** (before game start).
+- **`TriviaGameScreen`** (`src/components/guest/TriviaGameScreen.tsx`) — MCQ flow with `useTeamMcqRoundPhase`, `MultipleChoicePanel`, `TeamMajorityExplainer`; sync fields from `PublicState.teamMcqSync`.
+- **`rebuildTeams()`** when entering **`lobby_trivia`** (see [`store.ts`](../src/lib/store.ts)).
+- Legacy **`MockGameScreen`** exists but is **not** wired in `PlayView`.
 
 ---
 
@@ -89,12 +86,11 @@ Do **not** duplicate the four-answer question layout. **Extend** (or add first) 
 
 ---
 
-## Files likely touched
+## Files (reference)
 
-- New game component, e.g. `src/components/guest/TriviaGameScreen.tsx`
-- `src/lib/store.ts` — voting aggregation, score persistence
-- New API routes e.g. `POST /api/game/trivia/vote` (or generic vote endpoint)
-- `src/components/guest/PlayView.tsx` — render real component for trivia game id
+- `src/components/guest/TriviaGameScreen.tsx`, `src/components/guest/PlayView.tsx`
+- `src/lib/store.ts`, `src/lib/triviaScoring.ts`, `src/lib/majorityVote.ts`, `src/lib/teamMcqTiming.ts`
+- `src/content/trivia.ts`, `src/app/api/game/trivia/vote/route.ts`
 
 ---
 

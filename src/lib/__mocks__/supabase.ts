@@ -27,7 +27,7 @@ const subscriptions: Array<{
 export { subscriptions };
 
 const createMockBuilder = (table: string) => {
-  let filterGroups: Array<{ col: string, val: any, type: 'eq' | 'neq' | 'in' | 'match' }> = [];
+  const filterGroups: Array<{ col: string, val: any, type: 'eq' | 'neq' | 'in' | 'match' }> = [];
   let operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
   let payload: any = null;
   let single = false;
@@ -50,7 +50,7 @@ const createMockBuilder = (table: string) => {
 
       const execute = async () => {
         try {
-          let result: any = { data: null, error: null };
+          const result: any = { data: null, error: null };
           const tableStore = stores[table] || [];
 
           let matchedRows = [...tableStore];

@@ -25,26 +25,26 @@ Reuse the **same page/component** with different **copy** and **optional team ro
   1. Guest has completed check-in **and** party protocol (local flags).
   2. **Admin** has advanced the session to “lobby for this game.”
 - When the host opens this step, **all connected clients should auto-navigate** here (WebSocket preferred; polling fallback today in `PlayView`).
-- Clear explanation for trivia: **team answer = option chosen by the majority of phones in the team** (ties need a defined rule).
+- Clear explanation for trivia (and the quote game lobby): **team answer = option chosen by the majority of phones in the team** (ties: lower option index wins — see `majorityVote.ts`).
+- For **team MCQ** games (trivia + quotes), each prompt uses a **15 s** synchronized answer window and a short reveal; constants live in `src/lib/teamMcqTiming.ts` ([ARCHITECTURE.md](./ARCHITECTURE.md) §2 / §5.3).
 
 ---
 
 ## Current implementation
 
 - **`LobbyScreen`** (`src/components/guest/LobbyScreen.tsx`) with `variant: 'trivia' | 'music_bingo' | 'identify_quote'`, wired from `PlayView` on `lobby_trivia`, `lobby_bingo`, `lobby_quotes`.
-- **Music bingo** variant: individual copy (50-title pool, host plays one song at a time, scoring tiers, wrong-tap penalty); no team roster. See [game-music-bingo.md](./game-music-bingo.md).
+- **Music bingo** variant: individual copy (50-title pool, host plays one song at a time, **20 min** round cap after `game_bingo` starts, scoring tiers, wrong-tap penalty); no team roster. See [game-music-bingo.md](./game-music-bingo.md).
 - **Countdown** after lobby schedules `game_*` via `scheduledGameStartsAtEpochMs` + `applyDueScheduledTransitions` (same pattern for all games).
 
 ---
 
 ## Data needs
 
-From server (`PublicState` or extended):
+From server (`PublicState`):
 
 - Current **step** / game id.
-- For team lobby: **teams** with **player nicknames** (not only `myTeammateNicknames` for current user — need full roster or per-team lists).
-
-Today `getPublicState` only exposes the **current player’s** team and teammate nicknames. Lobby likely needs **`teams: { name, nicknames[] }[]`** or similar for all guests.
+- **`lobbyTeams`** — full roster with nicknames per team on trivia / quote lobby steps (see `getPublicState` in `src/lib/store.ts`).
+- **`myTeam` / `myTeammateNicknames`** — highlight the current player’s team where relevant.
 
 ---
 

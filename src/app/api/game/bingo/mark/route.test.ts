@@ -10,7 +10,6 @@ import {
   setBingoPlaybackForTests,
 } from "@/lib/store";
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
-import { resetTestTables } from "@/lib/supabase";
 
 const mockCookies: Record<string, string> = {};
 
@@ -54,7 +53,7 @@ describe("POST /api/game/bingo/mark", () => {
       method: "POST",
       json: async () => ({ cellIndex: 0, mark: true }),
       headers: {
-        get: (name: string) => undefined,
+        get: () => undefined,
       },
     } as any);
     expect(res.status).toBe(401);

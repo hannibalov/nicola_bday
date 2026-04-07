@@ -17,32 +17,19 @@ afterEach(() => {
 describe("sessionSyncTransport", () => {
   it("guest uses WebSocket by default", () => {
     delete process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE;
-    expect(shouldGuestPlayViewUseWebSocket(new URLSearchParams())).toBe(
-      true,
-    );
-  });
-
-  it("guest skips WebSocket when protocolTest=1", () => {
-    delete process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE;
-    expect(
-      shouldGuestPlayViewUseWebSocket(
-        new URLSearchParams("protocolTest=1&nickname=a"),
-      ),
-    ).toBe(false);
+    expect(shouldGuestPlayViewUseWebSocket()).toBe(true);
   });
 
   it("guest skips WebSocket when NEXT_PUBLIC_NICOLA_DISABLE_SSE=1", () => {
     process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE = "1";
-    expect(shouldGuestPlayViewUseWebSocket(new URLSearchParams())).toBe(
-      false,
-    );
+    expect(shouldGuestPlayViewUseWebSocket()).toBe(false);
   });
 
-  it("admin uses WebSocket unless disable env is set", () => {
+  it("admin always uses WebSocket as primary transport (guest disable env ignored)", () => {
     delete process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE;
     expect(shouldAdminPanelUseWebSocket()).toBe(true);
     process.env.NEXT_PUBLIC_NICOLA_DISABLE_SSE = "1";
-    expect(shouldAdminPanelUseWebSocket()).toBe(false);
+    expect(shouldAdminPanelUseWebSocket()).toBe(true);
   });
 });
 

@@ -8,7 +8,7 @@ type DbRecord = Record<string, unknown>;
 type TableStore = Record<string, DbRecord[]>;
 
 type MockBuilder = {
-    select: (columns?: string) => MockBuilder;
+    select: () => MockBuilder;
     insert: (rows: unknown) => MockBuilder;
     upsert: (rows: unknown) => MockBuilder;
     update: (updates: Record<string, unknown>) => MockBuilder;
@@ -99,7 +99,7 @@ if (process.env.NODE_ENV === 'test') {
         let single = false;
 
         const builder: MockBuilder = {
-            select(columns?: string) {
+            select() {
                 operation = 'select';
                 return builder;
             },

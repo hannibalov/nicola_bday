@@ -58,7 +58,7 @@ describe("POST /api/game/bingo/claim", () => {
       method: "POST",
       json: async () => ({ lineKeys: ["0,1,2"] }),
       headers: {
-        get: (name: string) => undefined,
+        get: () => undefined,
       },
     } as any);
     expect(res.status).toBe(401);

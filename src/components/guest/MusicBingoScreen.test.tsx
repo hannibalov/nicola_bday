@@ -10,11 +10,12 @@ jest.mock("next/navigation", () => ({
 }));
 import { bingoCardTitlesForPlayer } from "@/lib/bingoCard";
 import { BINGO_FULL_CARD_CLAIM_KEY } from "@/lib/bingoLine";
+import { BINGO_ROUND_DURATION_MS } from "@/lib/bingoRound";
 import { KEYS } from "@/lib/clientStorage";
 
 const playerId = "bingo-tester-id";
 
-const defaultRoundEnd = Date.now() + 900_000;
+const defaultRoundEnd = Date.now() + BINGO_ROUND_DURATION_MS;
 
 function baseProps(
   over: Partial<ComponentProps<typeof MusicBingoScreen>> = {}
@@ -30,7 +31,7 @@ function baseProps(
 
 describe("MusicBingoScreen", () => {
   jest.setTimeout(30000);
-jest.setTimeout(30000); beforeEach(async () => {
+  beforeEach(async () => {
     localStorage.clear();
     localStorage.setItem(KEYS.playerId, playerId);
   });
@@ -235,5 +236,40 @@ jest.setTimeout(30000); beforeEach(async () => {
       expect(screen.getByText(titles[0]!, { exact: false })).toBeInTheDocument()
     );
     expect(screen.getByTestId("bingo-round-countdown")).toBeInTheDocument();
+  });
+
+  it("shows score from mark response including negative wrong-tap penalty", async () => {
+    const onBingoMutation = jest.fn();
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            ok: true,
+            marked: Array.from({ length: 6 }, () => false),
+            score: -5,
+            wrongTapPenalty: true,
+          }),
+      } as Response)
+    ) as unknown as typeof fetch;
+
+    render(
+      <MusicBingoScreen
+        {...baseProps({ myBingoScore: 0, onBingoMutation })}
+      />
+    );
+    const titles = bingoCardTitlesForPlayer(playerId);
+    await waitFor(() =>
+      expect(screen.getByText(titles[0]!, { exact: false })).toBeInTheDocument()
+    );
+    const callBingo = screen.getByRole("button", { name: /call bingo/i });
+    const cellButtons = screen
+      .getAllByRole("button")
+      .filter((b) => b !== callBingo);
+    fireEvent.click(cellButtons[0]!);
+    await waitFor(() =>
+      expect(screen.getByText(/your score this round:\s*-5/i)).toBeInTheDocument()
+    );
+    expect(onBingoMutation).toHaveBeenCalled();
   });
 });

@@ -8,11 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import type { PublicState } from "@/types";
 import {
   clearGuestRegistrationForRejoin,
-  getGuestNicknameForClient,
+  getPersistedNickname,
   hasCompletedPartyProtocol,
   setLastKnownStep,
 } from "@/lib/clientStorage";
@@ -27,8 +27,6 @@ import GameLeaderboard from "./GameLeaderboard";
 import FinalLeaderboard from "./FinalLeaderboard";
 import PartyProtocolScreen from "./PartyProtocolScreen";
 import LobbyScreen from "./LobbyScreen";
-import { isProtocolGateBypassed } from "@/lib/partyProtocolGate";
-import { buildProtocolTestPreserveQuery } from "@/lib/protocolTestMode";
 import {
   shouldGuestPlayViewUseWebSocket,
   parseWebSocketPayload,
@@ -38,30 +36,26 @@ import { buildTeamLeaderboardEntries } from "@/lib/store";
 
 export default function PlayView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [state, setState] = useState<PublicState | null>(null);
   const [loading, setLoading] = useState(true);
   const [protocolLocalComplete, setProtocolLocalComplete] = useState(false);
   const [viewerNickname, setViewerNickname] = useState<string | null>(null);
-  const protocolGateBypass = isProtocolGateBypassed(
-    process.env.NEXT_PUBLIC_NICOLA_PROTOCOL_TEST,
-    searchParams.get("protocolTest")
-  );
-
   /**
    * Track the last revision we received from the server to avoid redundant
    * re-fetches when an SSE message carries the same revision we already have.
    */
   const lastKnownRevision = useRef<number>(-1);
   const lastKnownStep = useRef<string>("");
+  /** Ignore stale `/api/state` responses when a newer fetch was started (fixes out-of-order network). */
+  const stateFetchEpoch = useRef(0);
 
 
   useLayoutEffect(() => {
     startTransition(() => {
       setProtocolLocalComplete(hasCompletedPartyProtocol());
-      setViewerNickname(getGuestNicknameForClient(searchParams));
+      setViewerNickname(getPersistedNickname());
     });
-  }, [searchParams]);
+  }, []);
 
   /**
    * Resilience: if the server restarts, players are unknown until they re-register.
@@ -90,8 +84,7 @@ export default function PlayView() {
               /* still drop local state and send guest to check-in */
             }
             clearGuestRegistrationForRejoin();
-            const q = buildProtocolTestPreserveQuery(searchParams);
-            router.replace(q ? `/?${q}` : "/");
+            router.replace("/");
           })();
         }
         return;
@@ -103,18 +96,26 @@ export default function PlayView() {
       setState(data);
       setLastKnownStep(data.guestStep, data.revision);
     },
-    [router, searchParams],
+    [router],
   );
 
   const fetchState = useCallback(() => {
-    guestFetch("/api/state", searchParams, { credentials: "include" })
+    const epoch = ++stateFetchEpoch.current;
+    guestFetch("/api/state", { credentials: "include" })
       .then((res) => res.json())
       .then((data: PublicState) => {
+        if (epoch !== stateFetchEpoch.current) return;
         handleIncomingState(data);
       })
-      .catch(() => setState(null))
-      .finally(() => setLoading(false));
-  }, [handleIncomingState, searchParams]);
+      .catch(() => {
+        if (epoch !== stateFetchEpoch.current) return;
+        setState(null);
+      })
+      .finally(() => {
+        if (epoch !== stateFetchEpoch.current) return;
+        setLoading(false);
+      });
+  }, [handleIncomingState]);
 
   useEffect(() => {
     fetchState();
@@ -122,7 +123,7 @@ export default function PlayView() {
     let ws: WebSocket | null = null;
     let es: EventSource | null = null;
     let wsOpenTimeout: number | null = null;
-    const useWebSocket = shouldGuestPlayViewUseWebSocket(searchParams);
+    const useWebSocket = shouldGuestPlayViewUseWebSocket();
 
     const startPolling = () => {
       if (poller == null) {
@@ -273,7 +274,7 @@ export default function PlayView() {
       es?.close();
       poller?.stop();
     };
-  }, [fetchState, searchParams]);
+  }, [fetchState, handleIncomingState]);
 
   if (loading || !state) {
     const fontHeadline =
@@ -309,7 +310,6 @@ export default function PlayView() {
       return (
         <PartyProtocolScreen
           phase="post_check_in"
-          gateBypass={protocolGateBypass}
           onCompleted={() => setProtocolLocalComplete(true)}
         />
       );
@@ -367,6 +367,7 @@ export default function PlayView() {
         myBingoScore={state.myBingoScore}
         bingoRoundEndsAtEpochMs={state.bingoRoundEndsAtEpochMs}
         myBingoMarkedCells={state.myBingoMarkedCells}
+        onBingoMutation={fetchState}
       />
     );
   }

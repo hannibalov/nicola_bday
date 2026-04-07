@@ -1,8 +1,7 @@
 /**
  * Resolve guest player id from the incoming request. In development, test, or
- * when NICOLA_PROTOCOL_TEST_API=1, `x-nicola-player-id` wins so multiple
- * `/play?protocolTest=1&nickname=*` tabs can use distinct ids with one shared
- * browser cookie.
+ * when NICOLA_PROTOCOL_TEST_API=1, `x-nicola-player-id` wins over the cookie
+ * (useful for multi-tab API testing).
  */
 
 export const NICOLA_PLAYER_ID_HEADER = "x-nicola-player-id";

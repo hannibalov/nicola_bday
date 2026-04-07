@@ -21,7 +21,7 @@ Host-only control surface (protected by shared **secret**, not user accounts). S
 
 - **Player count** and list of nicknames (already listed today).
 - Trigger **each segment:** open first lobby, start trivia, end trivia → leaderboard, open bingo lobby, start bingo, etc. The exact control model can be **one “Advance”** button (current `start-next`) or **explicit buttons** per transition; product prefers clarity for a stressed host.
-- **Music bingo:** While guests are on `game_bingo`, show **Now playing** (current title from the shuffled pool) and **Advance to next song** → `POST /api/admin/bingo-advance-song` with `x-admin-key` (see [game-music-bingo.md](./game-music-bingo.md)).
+- **Music bingo:** While guests are on `game_bingo`, show **Now playing** (current title from the shuffled pool) and **Advance to next song** → `POST /api/admin/bingo-advance-song` with `x-admin-key` (see [game-music-bingo.md](./game-music-bingo.md)). The round **auto-ends 20 minutes** after entering `game_bingo` (`BINGO_ROUND_DURATION_MS` in `src/lib/bingoRound.ts`); the panel shows the scheduled end time.
 - When advancing, clients should receive updates quickly — **WebSocket** (`/api/events`) with SSE fallback and polling fallback (`ARCHITECTURE.md`).
 
 ---
