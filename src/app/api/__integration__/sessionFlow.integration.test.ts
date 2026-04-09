@@ -339,6 +339,40 @@ describe("session flow integration (HTTP + store)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("late join during trivia stays on a team after another player votes (no roster wipe)", async () => {
+    await registerViaApi("T1");
+    await registerViaApi("T2");
+    await registerViaApi("T3");
+    await advanceGuestStepUntil("game_trivia");
+
+    const lateId = await registerViaApi("Late");
+    let session = await getSessionState();
+    expect(session.teams.some((t) => t.playerIds.includes(lateId))).toBe(true);
+
+    const q = TRIVIA_QUESTIONS[session.teamMcqRoundIndex]!;
+    const existingId = session.players.find((p) => p.nickname === "T1")!.id;
+    setPlayerCookie(existingId);
+    const voteRes = await postTriviaVote(
+      postJsonWithPlayerCookie("/api/game/trivia/vote", existingId, {
+        questionId: q.id,
+        optionIndex: q.correctIndex,
+      }),
+    );
+    expect(voteRes.status).toBe(200);
+
+    session = await getSessionState();
+    expect(session.teams.some((t) => t.playerIds.includes(lateId))).toBe(true);
+
+    const adminRes = await getAdminState(
+      {
+        url: `http://localhost/api/admin/state?key=${encodeURIComponent(ADMIN_SECRET)}`,
+      } as any
+    );
+    expect(adminRes.status).toBe(200);
+    const adminJson = (await adminRes.json()) as { teams: { playerIds: string[] }[] };
+    expect(adminJson.teams.some((t) => t.playerIds.includes(lateId))).toBe(true);
+  });
+
   it("trivia scoring integration: team all-correct matches store round scores", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) {

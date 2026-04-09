@@ -259,14 +259,36 @@ async function commitBingoProgress(state: SessionState): Promise<void> {
   await Promise.all([...bingoMarkOps, ...bingoClaimOps]);
 }
 
+export type SessionCommitOptions = {
+  /**
+   * When true, rewrites `teams` + `team_membership` from `state.teams`.
+   * Must run after `internalRebuildTeams` (entering trivia/quotes lobby).
+   * Default false: avoids wiping late-join `team_membership` rows when another request
+   * commits votes/scores with a stale in-memory roster (serverless overlap).
+   */
+  persistTeams?: boolean;
+};
+
 /** Persists the modified state back to the relational tables (v2.0 schema). */
-async function commitState(state: SessionState): Promise<void> {
+async function commitState(
+  state: SessionState,
+  options?: SessionCommitOptions,
+): Promise<void> {
+  const persistTeams = options?.persistTeams === true;
   await Promise.all([
     commitCoreState(state),
-    commitTeamsAndMembership(state),
+    ...(persistTeams ? [commitTeamsAndMembership(state)] : []),
     commitScoresAndVotes(state),
     commitBingoProgress(state),
   ]);
+}
+
+/** Test hook: same as internal commit; use `persistTeams` to mirror production lobby rebuilds. */
+export async function applySessionCommitForTests(
+  state: SessionState,
+  options?: SessionCommitOptions,
+): Promise<void> {
+  await commitState(state, options);
 }
 
 function generateId(): string {
@@ -290,7 +312,7 @@ async function internalRebuildTeams(state: SessionState): Promise<void> {
 export async function rebuildTeams(): Promise<void> {
   const state = await getStoreState();
   await internalRebuildTeams(state);
-  await commitState(state);
+  await commitState(state, { persistTeams: true });
   notifySessionChanged();
 }
 
@@ -298,10 +320,19 @@ export async function rebuildTeams(): Promise<void> {
  * Checks and apply any due step advances (lobby -> game) based on scheduled timestamps.
  * Returns true if state was changed.
  */
-async function applyDueScheduledTransitions(state: SessionState, nowMs: number): Promise<boolean> {
-  if (state.scheduledGameStartsAtEpochMs == null) return false;
-  if (!LOBBY_STEPS_WITH_SCHEDULE.has(state.guestStep)) return false;
-  if (nowMs < state.scheduledGameStartsAtEpochMs) return false;
+async function applyDueScheduledTransitions(
+  state: SessionState,
+  nowMs: number,
+): Promise<{ changed: boolean; persistTeams: boolean }> {
+  if (state.scheduledGameStartsAtEpochMs == null) {
+    return { changed: false, persistTeams: false };
+  }
+  if (!LOBBY_STEPS_WITH_SCHEDULE.has(state.guestStep)) {
+    return { changed: false, persistTeams: false };
+  }
+  if (nowMs < state.scheduledGameStartsAtEpochMs) {
+    return { changed: false, persistTeams: false };
+  }
 
   const from = state.guestStep;
   let to: GuestStep;
@@ -314,21 +345,30 @@ async function applyDueScheduledTransitions(state: SessionState, nowMs: number):
   }
 
   const transitionAtMs = state.scheduledGameStartsAtEpochMs ?? nowMs;
-  await applyTransitionSideEffects(state, from, to, transitionAtMs);
+  const persistTeams = await applyTransitionSideEffects(state, from, to, transitionAtMs);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.revision += 1;
-  return true;
+  return { changed: true, persistTeams };
 }
 
 /** 
  * Checks and apply any due bingo round ends.
  * Returns true if state was changed.
  */
-async function applyDueBingoRoundEnd(state: SessionState, nowMs: number): Promise<boolean> {
-  if (state.guestStep !== "game_bingo") return false;
-  if (state.bingoRoundEndsAtEpochMs == null) return false;
-  if (nowMs < state.bingoRoundEndsAtEpochMs) return false;
+async function applyDueBingoRoundEnd(
+  state: SessionState,
+  nowMs: number,
+): Promise<{ changed: boolean; persistTeams: boolean }> {
+  if (state.guestStep !== "game_bingo") {
+    return { changed: false, persistTeams: false };
+  }
+  if (state.bingoRoundEndsAtEpochMs == null) {
+    return { changed: false, persistTeams: false };
+  }
+  if (nowMs < state.bingoRoundEndsAtEpochMs) {
+    return { changed: false, persistTeams: false };
+  }
 
   const from = state.guestStep;
   const to = "leaderboard_post_bingo" as const;
@@ -337,7 +377,7 @@ async function applyDueBingoRoundEnd(state: SessionState, nowMs: number): Promis
   state.guestStep = to;
   state.bingoRoundEndsAtEpochMs = null;
   state.revision += 1;
-  return true;
+  return { changed: true, persistTeams: false };
 }
 
 /**
@@ -382,12 +422,14 @@ async function applyDueTeamMcqRoundAdvance(state: SessionState, nowMs: number): 
 /** Handles all periodic state transitions in one pass. */
 async function applyPreconditions(existingState?: SessionState, nowMs: number = Date.now()): Promise<SessionState> {
   const state = existingState || await getStoreState();
-  const c1 = await applyDueScheduledTransitions(state, nowMs);
+  const r1 = await applyDueScheduledTransitions(state, nowMs);
   const c2 = await applyDueTeamMcqRoundAdvance(state, nowMs);
-  const c3 = await applyDueBingoRoundEnd(state, nowMs);
+  const r3 = await applyDueBingoRoundEnd(state, nowMs);
 
-  if (c1 || c2 || c3) {
-    await commitState(state);
+  if (r1.changed || c2 || r3.changed) {
+    await commitState(state, {
+      persistTeams: r1.persistTeams || r3.persistTeams,
+    });
     notifySessionChanged();
   }
   return state;
@@ -412,7 +454,15 @@ function lobbyTeamsFromSession(state: SessionState): LobbyTeamRoster[] {
   }));
 }
 
-async function applyTransitionSideEffects(state: SessionState, from: GuestStep, to: GuestStep, nowMs: number = Date.now()): Promise<void> {
+/** @returns Whether trivia/quotes team rosters were rebuilt (DB sync required). */
+async function applyTransitionSideEffects(
+  state: SessionState,
+  from: GuestStep,
+  to: GuestStep,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  let teamsRebuilt = false;
+
   if (from === "game_bingo" && to !== "game_bingo") {
     state.bingoRoundEndsAtEpochMs = null;
     state.bingoSongOrder = [];
@@ -426,8 +476,8 @@ async function applyTransitionSideEffects(state: SessionState, from: GuestStep, 
 
   if (to === "lobby_trivia" || to === "lobby_quotes") {
     await internalRebuildTeams(state);
+    teamsRebuilt = true;
   }
-
 
   if (to === "game_trivia") {
     state.triviaVotesByPlayer = {};
@@ -461,6 +511,8 @@ async function applyTransitionSideEffects(state: SessionState, from: GuestStep, 
   if (to === "leaderboard_final") {
     recordRoundScoresForCompletedGame(state, 2);
   }
+
+  return teamsRebuilt;
 }
 
 function recordRoundScoresForCompletedGame(state: SessionState, gameSlotIndex: number): void {
@@ -870,11 +922,11 @@ export async function advancePhase(nowMs: number = Date.now()): Promise<void> {
 
   const to = getNextGuestStep(from);
   if (!to) return;
-  await applyTransitionSideEffects(state, from, to, nowMs);
+  const teamsRebuilt = await applyTransitionSideEffects(state, from, to, nowMs);
   state.guestStep = to;
   state.scheduledGameStartsAtEpochMs = null;
   state.revision += 1;
-  await commitState(state);
+  await commitState(state, { persistTeams: teamsRebuilt });
   notifySessionChanged();
 }
 

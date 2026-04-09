@@ -14,6 +14,7 @@ import {
   submitTriviaVote,
   submitQuoteVote,
   buildTeamLeaderboardEntries,
+  applySessionCommitForTests,
 } from "./store";
 import { TEAM_MCQ_CYCLE_MS } from "./teamMcqTiming";
 import { TRIVIA_QUESTIONS } from "@/content/trivia";
@@ -231,6 +232,46 @@ describe("store", () => {
         (await getSessionState()).teams.map((t) => [...t.playerIds].sort())
       );
       expect(quoteTeams).not.toBe(triviaTeams);
+    });
+
+    it("does not drop late joiners from team_membership when committing a stale roster without persistTeams", async () => {
+      await registerPlayer("Early1");
+      await registerPlayer("Early2");
+      await advanceUntil("game_trivia");
+      const lateId = await registerPlayer("LateJoin");
+      let state = await getSessionState();
+      expect(state.teams.some((t) => t.playerIds.includes(lateId))).toBe(true);
+
+      const stale: typeof state = {
+        ...state,
+        teams: state.teams.map((t) => ({
+          ...t,
+          playerIds: t.playerIds.filter((id) => id !== lateId),
+        })),
+      };
+      await applySessionCommitForTests(stale, { persistTeams: false });
+
+      state = await getSessionState();
+      expect(state.teams.some((t) => t.playerIds.includes(lateId))).toBe(true);
+    });
+
+    it("applySessionCommitForTests with persistTeams overwrites membership from the snapshot", async () => {
+      await registerPlayer("Early1");
+      await registerPlayer("Early2");
+      await advanceUntil("game_trivia");
+      const lateId = await registerPlayer("LateJoin");
+      let state = await getSessionState();
+      const stale: typeof state = {
+        ...state,
+        teams: state.teams.map((t) => ({
+          ...t,
+          playerIds: t.playerIds.filter((id) => id !== lateId),
+        })),
+      };
+      await applySessionCommitForTests(stale, { persistTeams: true });
+
+      state = await getSessionState();
+      expect(state.teams.some((t) => t.playerIds.includes(lateId))).toBe(false);
     });
   });
 
