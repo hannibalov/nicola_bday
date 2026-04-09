@@ -1,3 +1,4 @@
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { formatSseData } from "@/lib/sseFormat";
 import { getPublicState } from "@/lib/store";
@@ -53,6 +54,11 @@ type PostgresRealtimeChannel = {
 
 function channelForPostgres(name: string): PostgresRealtimeChannel {
   return supabase.channel(name) as unknown as PostgresRealtimeChannel;
+}
+
+/** `channelForPostgres` narrows the type for `.on()`; cleanup must pass the real `RealtimeChannel`. */
+function removePostgresChannel(ch: PostgresRealtimeChannel): void {
+  supabase.removeChannel(ch as unknown as RealtimeChannel);
 }
 
 /** Supabase reuses `channel(name)`; a second SSE/WS connection must not `.on()` after the first subscribed. */
@@ -141,8 +147,8 @@ async function handleWebSocket(request: Request) {
   }
 
   server.addEventListener("close", () => {
-    supabase.removeChannel(sessionChannel);
-    supabase.removeChannel(playerChannel);
+    removePostgresChannel(sessionChannel);
+    removePostgresChannel(playerChannel);
   });
 
   return new Response(null, {
@@ -216,8 +222,8 @@ async function handleSSE(request: Request) {
       }
 
       return () => {
-        supabase.removeChannel(sessionChannel);
-        supabase.removeChannel(playerChannel);
+        removePostgresChannel(sessionChannel);
+        removePostgresChannel(playerChannel);
       };
     },
     cancel() {
