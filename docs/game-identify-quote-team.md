@@ -10,7 +10,7 @@
 
 - **All** quotes ship from [`quoteQuestions.json`](../src/lib/content/quoteQuestions.json) (currently **21** items); each has **4** options and a **correct** option index (fake / humorous quotes are fine).
 - **Same synchronized MCQ timing as trivia:** **15 s** answer + **3 s** reveal per quote (`TEAM_MCQ_ANSWER_MS` / `TEAM_MCQ_REVEAL_MS` in [`teamMcqTiming.ts`](../src/lib/teamMcqTiming.ts)).
-- **50 points** per correct answer.
+- **50 points** per correct answer **per person on the team** (same full amount for every member — not divided).
 - **Same team mechanics as trivia:** each player chooses on their phone; **plurality within the team** becomes the team’s answer for that quote.
 - **Teams must be rebuilt** when entering the quote flow — [`rebuildTeams()`](../src/lib/store.ts) runs when entering **`lobby_quotes`** (independent from trivia teams).
 

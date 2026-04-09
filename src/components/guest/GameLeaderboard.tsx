@@ -123,6 +123,13 @@ export default function GameLeaderboard({
           </button>
         </div>
 
+        {currentType === "team" ? (
+          <p className="mb-4 rounded-xl border border-[#b3ac9f]/25 bg-[#f8f0e0]/90 px-3 py-2 text-center text-[11px] leading-snug text-[#605b50]">
+            Squad score is your team’s round total — the same points every teammate
+            earned (not added up across players).
+          </p>
+        ) : null}
+
         {entries.length === 0 ? (
           <p
             className="rounded-xl bg-[#f8f0e0] px-4 py-8 text-center text-sm text-[#605b50]"

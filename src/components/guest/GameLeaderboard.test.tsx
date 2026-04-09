@@ -38,6 +38,9 @@ describe("GameLeaderboard", () => {
     );
     const group = screen.getByRole("group", { name: /Display mode/i });
     expect(group).toHaveTextContent("Squad");
+    expect(
+      screen.getByText(/same points every teammate earned/i)
+    ).toBeInTheDocument();
   });
 
   it("shows empty state when there are no entries", () => {

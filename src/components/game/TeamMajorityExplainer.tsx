@@ -9,7 +9,8 @@ export default function TeamMajorityExplainer() {
         Tap the answer on your phone. Your team’s official pick is whatever{" "}
         <strong>most of you</strong> choose (ties pick the lower-number option).
         If that pick is right, <strong>everyone on the team</strong> earns{" "}
-        <strong>50 points</strong> for this round.
+        <strong>50 points</strong> for that question — same full amount for each
+        person (nothing is split across the squad).
       </p>
     </div>
   );

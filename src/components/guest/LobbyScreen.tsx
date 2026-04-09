@@ -250,7 +250,7 @@ export default function LobbyScreen({
               {variant === "trivia"
                 ? "UK · Barcelona · 1970s threads — 20 questions, 50 pts each."
                 : variant === "identify_quote"
-                  ? `${QUOTE_ROUND_COUNT} quotes, four choices — your team’s majority locks the answer.`
+                  ? `${QUOTE_ROUND_COUNT} quotes, four choices — majority locks the answer; 50 pts per correct team pick for everyone on the squad.`
                   : "2×3 card, 50 ’70s titles — host plays one track at a time; tap only when that song is on. 50 / 100 / 500 pts for column / row / full card; wrong tile −5."}
             </p>
           </div>

@@ -586,19 +586,25 @@ function currentBingoSongTitle(state: SessionState): string | null {
   return order[i] ?? null;
 }
 
+/**
+ * Squad leaderboard rows for team rounds (trivia, quotes).
+ * `scores` is keyed by player: each teammate already has the **same** value — the
+ * team’s full round total — not a share. The row shows that total once, not the sum
+ * across members (summing would inflate by team size).
+ */
 export function buildTeamLeaderboardEntries(
   teams: Team[],
   scores: Record<string, number>
 ): { name: string; score: number }[] {
   return sortLeaderboardEntries(
     teams.map((t) => {
-      const teamScore = t.playerIds.reduce(
-        (acc, pid) => acc + (scores[pid] ?? 0),
-        0
-      );
+      if (t.playerIds.length === 0) {
+        return { name: t.name, score: 0 };
+      }
+      const representative = t.playerIds[0]!;
       return {
         name: t.name,
-        score: teamScore,
+        score: scores[representative] ?? 0,
       };
     })
   );

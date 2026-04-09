@@ -648,21 +648,21 @@ describe("store", () => {
   });
 
   describe("leaderboard display", () => {
-    it("aggregates team player scores for team leaderboard entries", () => {
+    it("uses each teammate’s round total once per squad row (not summed across members)", () => {
       const entries = buildTeamLeaderboardEntries(
         [
           { id: "teamA", name: "Team A", playerIds: ["p1", "p2"] },
           { id: "teamB", name: "Team B", playerIds: ["p3"] },
         ],
         {
-          p1: 100,
-          p2: 150,
-          p3: 80,
+          p1: 500,
+          p2: 500,
+          p3: 200,
         }
       );
       expect(entries).toEqual([
-        { name: "Team A", score: 250 },
-        { name: "Team B", score: 80 },
+        { name: "Team A", score: 500 },
+        { name: "Team B", score: 200 },
       ]);
     });
 
@@ -735,7 +735,7 @@ describe("store", () => {
       expect(uniqueNicknames.size).toBe(ids.length);
     });
 
-    it("team leaderboard entries reflect all team members' scores correctly", async () => {
+    it("team leaderboard squad rows match each member’s stored round score (not sum of members)", async () => {
       const ids: string[] = [];
       for (let i = 0; i < 6; i++) ids.push(await registerPlayer(`P${i}`));
 
@@ -747,7 +747,6 @@ describe("store", () => {
       const gameScores = state.gameScores[GAMES[0].id]!;
       const teams = state.teams;
 
-      // Verify each team's leaderboard entry score matches the sum of its members' scores
       expect(leaderboard.length).toBeGreaterThan(0);
       leaderboard.forEach(entry => {
         const matchingTeam = teams.find(t => t.name === entry.name);
@@ -755,10 +754,15 @@ describe("store", () => {
 
         if (matchingTeam) {
           const memberScores = matchingTeam.playerIds.map(pid => gameScores[pid] ?? 0);
-          const teamTotal = memberScores.reduce((sum, s) => sum + s, 0);
+          const perMember = memberScores[0] ?? 0;
+          memberScores.forEach((s) => expect(s).toBe(perMember));
 
-          // The leaderboard entry should show team total score
-          expect(entry.score).toBe(teamTotal);
+          expect(entry.score).toBe(perMember);
+          if (matchingTeam.playerIds.length > 1 && perMember > 0) {
+            const summed = memberScores.reduce((sum, s) => sum + s, 0);
+            expect(summed).toBe(perMember * matchingTeam.playerIds.length);
+            expect(entry.score).not.toBe(summed);
+          }
         }
       });
     });

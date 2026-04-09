@@ -19,7 +19,7 @@ Show standings **after** a game completes, before the next lobby or the final wr
 ## Product requirements
 
 - Rankings must reflect **actual** scoring rules for the preceding game (not mock random data — see `src/lib/store.ts` `recordMockScores` to replace).
-- **Team games (trivia, quotes):** Leaderboard can show **teams** or **individuals** — product decision; spec mentions leaderboard after each game; be consistent with “teams copied to each member” (everyone on the team has the same points from that round).
+- **Team games (trivia, quotes):** `GameLeaderboard` toggles **Individual** vs **Squad**. Everyone on the team has the **same** round score (the team’s total for that game — not divided). **Squad** rows show that total **once**; they are not the sum of all members’ stored scores (members already each hold the full amount).
 - **Music bingo:** Individual points; show players.
 - Visuals: clear ranking (podium or list), readable names/scores, mobile-friendly accents.
 
@@ -37,7 +37,7 @@ Show standings **after** a game completes, before the next lobby or the final wr
 
 - `PublicState.leaderboard` already exists for current game end.
 - Ensure server writes **real** cumulative or per-round scores when advancing from `game` → `leaderboard`.
-- For **final** event totals, either reuse `FinalLeaderboard` or unify — current code has `final_leaderboard` phase with `getFinalLeaderboard()` which **averages** team points across members; **this conflicts** with the **product spec** (“team points **copied** to each player”). Update store math when implementing real scoring (see `ARCHITECTURE.md`).
+- For **final** totals, `FinalLeaderboard` uses `getFinalLeaderboard()`, which **adds** each player’s per-game scores. For trivia and quotes, each player already has the full team round total on their row, so the final list is per-person cumulative points (no averaging step).
 
 ---
 

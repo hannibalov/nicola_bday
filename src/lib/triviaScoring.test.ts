@@ -28,6 +28,21 @@ describe("computeTriviaScoresFromVotes", () => {
     expect(scores).toEqual({ a: 0, b: 0, c: 0 });
   });
 
+  it("gives each teammate the full 50 per correct question (not split by team size)", () => {
+    const trio: Team[] = [
+      { id: "t1", name: "T", playerIds: ["a", "b", "c"] },
+    ];
+    const scores = computeTriviaScoresFromVotes(
+      ["a", "b", "c"],
+      trio,
+      { a: { q1: 0 }, b: { q1: 0 }, c: { q1: 0 } },
+      [{ id: "q1", correctIndex: 0 }]
+    );
+    expect(scores.a).toBe(50);
+    expect(scores.b).toBe(50);
+    expect(scores.c).toBe(50);
+  });
+
   it("adds 50 per correct team answer per question to every teammate", () => {
     const votes = {
       a: { q1: 0, q2: 1 },
