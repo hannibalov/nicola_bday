@@ -13,7 +13,7 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
     prompt:
       "Bolton, Stockport, and Oldham sit inside which official English region?",
     options: [
-      "Greater Manchester",
+      "North West England",
       "Merseyside",
       "Tyne and Wear",
       "West Yorkshire",
@@ -81,21 +81,22 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   },
   {
     id: "t7",
-    prompt: "La Rambla is a famous street in which Barcelona area?",
+    prompt:
+      "What is said to happen if you drink from Font de Canaletes on Las Ramblas?",
     options: [
-      "Eixample",
-      "Gràcia",
-      "Barceloneta",
-      "Ciutat Vella",
+      "You won’t get pickpocketed",
+      "You’ll fall in love with Barcelona",
+      "FC Barcelona will win their next match",
+      "Catalans will love you",
     ],
-    correctIndex: 3,
+    correctIndex: 1,
     topic: "Barcelona",
   },
   {
     id: "t8",
     prompt:
-      "Barcelona's main 1992 Olympic stadium sits on which hill, known for museums and views over the port?",
-    options: ["Collserola", "Montjuïc", "Tibidabo", "Montserrat"],
+      "What major museum is housed in the Palau Nacional?",
+    options: ["MACBA", "MNAC", "Palau de Generalitat", "Royal Palace of Pedralbes"],
     correctIndex: 1,
     topic: "Barcelona",
   },
@@ -109,7 +110,7 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t10",
     prompt:
-      "Barcelona's famous octagonal Eixample blocks came chiefly from which 19th‑century engineer‑planner?",
+      "Barcelona's famous octagonal Eixample blocks came chiefly from which 19th-century engineer-planner?",
     options: [
       "Antoni Gaudí",
       "Le Corbusier",
@@ -135,7 +136,7 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t12",
     prompt:
-      "In the polite West Country cream‑tea split, which county is famous for cream first, then jam on the scone?",
+      "In the polite West Country cream-tea split, which county is famous for cream first, then jam on the scone?",
     options: ["Cornwall", "Somerset", "Devon", "Dorset"],
     correctIndex: 2,
     topic: "UK",
@@ -164,7 +165,7 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t15",
     prompt:
-      "Cup of tea in a mug: when do you pour the milk if you’re not a heathen who goes milk‑first?",
+      "Cup of tea in a mug: when do you pour the milk if you’re not a heathen who goes milk-first?",
     options: [
       "Before the hot water ever touches the cup",
       "After you've poured in the boiling water (brew, then lighten to taste)",
@@ -177,7 +178,7 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t16",
     prompt:
-      "Which 1978 musical pairs Olivia Newton‑John and John Travolta at Rydell High?",
+      "Which 1978 musical pairs Olivia Newton-John and John Travolta at Rydell High?",
     options: [
       "All That Jazz",
       "Hair",
@@ -190,12 +191,12 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t17",
     prompt:
-      "Which 1979 Pink Floyd album produced the school‑choir hit 'Another Brick in the Wall Part 2'?",
+      "Which 1979 Pink Floyd album produced the school-choir hit 'Another Brick in the Wall Part 2'?",
     options: [
       "The Wall",
       "The Dark Side of the Moon",
-      "London Calling — The Clash",
-      "Rumours — Fleetwood Mac",
+      "London Calling",
+      "Rumours",
     ],
     correctIndex: 0,
     topic: "1970s",
@@ -216,22 +217,22 @@ export const TRIVIA_QUESTIONS: TriviaQuestion[] = [
   {
     id: "t19",
     prompt:
-      "Each August, one barrio’s streets become rival stage sets—papier‑mâché giants, cable‑tie canopy skies, and neighbours arguing over whose theme is weirder. Where does that week of glorious chaos happen?",
-    options: ["Sants", "Poblenou", "Gràcia", "El Born"],
-    correctIndex: 2,
+      "According to the market’s own history, La Boqueria’s origins date back to which year?",
+    options: ["1217", "1492", "1714", "1888"],
+    correctIndex: 0,
     topic: "Barcelona",
   },
   {
     id: "t20",
     prompt:
-      "On Montjuïc, crowds watch the Magic Fountain’s water‑and‑lights show. Straight uphill sits the big neo‑classical palace that is MNAC’s main building—what is it called?",
+      "Why are there 13 white geese in the cloister of Barcelona Cathedral?",
     options: [
-      "Recinte Modernista de Sant Pau",
-      "Casa Milà (La Pedrera)",
-      "Palau Nacional",
-      "Palau de la Música Catalana",
+      "They mark 13 medieval guilds",
+      "They honor 13 bishops of Barcelona",
+      "They symbolize 13 city gates",
+      "13 was the age of Saint Eulalia when she was martyred",
     ],
-    correctIndex: 2,
+    correctIndex: 3,
     topic: "Barcelona",
   },
 ];

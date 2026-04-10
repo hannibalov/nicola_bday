@@ -15,8 +15,8 @@
     "quote": "“You could get a truck through there love.”",
     "options": [
       "Karen",
-      "Dad",
-      "Mom",
+      "Nicola's Dad",
+      "Nicola's Mom",
       "Michelle"
     ],
     "correctIndex": 1
@@ -56,12 +56,12 @@
   },
   {
     "id": "q6",
-    "quote": "“Where you cannot love, do not prolong your stay.”",
+    "quote": "“It’s not your job to like me, it’s mine.”",
     "options": [
-      "Frida Kahlo",
+      "Katie Byron",
       "Remedios Varo",
       "Tina Modotti",
-      "Diego Rivera"
+      "Brene Brown"
     ],
     "correctIndex": 0
   },
@@ -69,8 +69,8 @@
     "id": "q7",
     "quote": "“What’s for dinner?”",
     "options": [
-      "Phil",
-      "Peter",
+      "Joao",
+      "Rodrigo",
       "Oscar",
       "Mauro"
     ],
@@ -144,14 +144,14 @@
   },
   {
     "id": "q14",
-    "quote": "“Life shrinks or expands in proportion to one’s courage.”",
+    "quote": "\"The most courageous act is still to think for yourself. Aloud.\"",
     "options": [
-      "Marguerite Duras",
-      "Colette",
+      "Vivienne Westwood",
+      "Coco Chanel",
       "Simone de Beauvoir",
       "Anaïs Nin"
     ],
-    "correctIndex": 3
+    "correctIndex": 1
   },
   {
     "id": "q15",
@@ -166,14 +166,14 @@
   },
   {
     "id": "q16",
-    "quote": "“I am my own muse, the subject I know best.”",
+    "quote": "“\"Storms make trees take deeper roots.”",
     "options": [
-      "Frida Kahlo",
-      "Tina Modotti",
-      "Remedios Varo",
-      "Salvador Dalí"
+      "Kylie Minogue ",
+      "Beyonce",
+      "Oprah Winfrey",
+      "Dolly Parton"
     ],
-    "correctIndex": 0
+    "correctIndex": 3
   },
   {
     "id": "q17",
@@ -188,14 +188,14 @@
   },
   {
     "id": "q18",
-    "quote": "“Hope is the thing with feathers that perches in the soul — and sings the tune without the words — and never stops at all.”",
+    "quote": "“Knowledge is knowing that a tomato is a fruit; wisdom is knowing not to put it in a fruit salad,”",
     "options": [
-      "Sylvia Plath",
-      "Charlotte Brontë",
-      "Emily Dickinson",
-      "Emily Brontë"
+      "Shira Kogus",
+      "Miles Kington",
+      "Brian O’Driscoll",
+      "Posh Spice"
     ],
-    "correctIndex": 2
+    "correctIndex": 1
   },
   {
     "id": "q19",
@@ -221,13 +221,13 @@
   },
   {
     "id": "q21",
-    "quote": "“Fall in love with yourself, with life, and then with whoever you want.”",
+    "quote": "“I get along just singing my song, people tell me I’m wrong, Fuck ‘em”",
     "options": [
-      "Leonora Carrington",
-      "Diego Rivera",
-      "Salvador Dalí",
-      "Frida Kahlo"
+      "Arctic Monkeys",
+      "Bob Dylan",
+      "The Libertines",
+      "The Smiths"
     ],
-    "correctIndex": 3
+    "correctIndex": 2
   }
 ]
